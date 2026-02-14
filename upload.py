@@ -31,10 +31,17 @@ youtube_creds = Credentials(
 )
 youtube = build("youtube", "v3", credentials=youtube_creds)
 
+# ---- READ EPISODE NUMBER
+if os.path.exists("episode.txt"):
+    with open("episode.txt", "r") as f:
+        episode_number = int(f.read().strip())
+else:
+    episode_number = 1
+
 # ---- GET VIDEOS
 results = drive_service.files().list(
     q=f"'{FOLDER_ID}' in parents and mimeType contains 'video/'",
-    fields="files(id, name, parents)"
+    fields="files(id, name)"
 ).execute()
 
 files = results.get("files", [])
@@ -43,9 +50,13 @@ if not files:
     print("No videos found.")
     exit()
 
-for file in files:
+# Upload MAX 2 videos per run
+videos_to_upload = files[:2]
+
+for file in videos_to_upload:
     print("Processing:", file["name"])
 
+    # Download file
     request = drive_service.files().get_media(fileId=file["id"])
     fh = io.FileIO(file["name"], "wb")
     downloader = MediaIoBaseDownload(fh, request)
@@ -54,15 +65,42 @@ for file in files:
     while not done:
         status, done = downloader.next_chunk()
 
+    # Create title
+    title = f"Bhagavad Gita Daily Dose – Verse of the Day | Episode {episode_number}"
+
+    description = """Bhagavad Gita Daily Dose – Verse of the Day
+
+#bhakti
+#devotional
+#spiritual
+#faith
+#god
+#krishna
+#radhakrishna
+#mahadev
+#shiva
+#hanuman
+#bholenath
+#bhajan
+#harekrishna
+#sanatandharma
+#hindugod
+#temple
+#dailybhakti
+#shorts
+#reels
+#viralbhakti
+"""
+
     media = MediaFileUpload(file["name"], resumable=True)
 
     request = youtube.videos().insert(
         part="snippet,status",
         body={
             "snippet": {
-                "title": file["name"],
-                "description": "Auto uploaded #shorts",
-                "tags": ["shorts"],
+                "title": title,
+                "description": description,
+                "tags": ["bhakti", "devotional", "gita", "krishna", "shorts"],
                 "categoryId": "22"
             },
             "status": {
@@ -86,3 +124,12 @@ for file in files:
     print("Moved to uploaded folder")
 
     os.remove(file["name"])
+
+    # Increase episode number
+    episode_number += 1
+
+# Save updated episode number
+with open("episode.txt", "w") as f:
+    f.write(str(episode_number))
+
+print("Episode number updated successfully.")
