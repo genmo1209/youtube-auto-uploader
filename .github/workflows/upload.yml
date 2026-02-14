@@ -2,7 +2,12 @@ name: Upload Shorts
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    # 10:00 AM IST (04:30 UTC)
+    - cron: "30 4 * * *"
+
+    # 10:00 PM IST (16:30 UTC)
+    - cron: "30 16 * * *"
+
   workflow_dispatch:
 
 jobs:
@@ -11,11 +16,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -29,3 +36,11 @@ jobs:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
           SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+
+      - name: Commit updated episode number
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add episode.txt
+          git commit -m "Update episode number" || echo "No changes to commit"
+          git push
