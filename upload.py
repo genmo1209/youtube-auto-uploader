@@ -1,6 +1,7 @@
 import os
 import io
 import json
+from datetime import datetime, timedelta, timezone
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
@@ -11,6 +12,20 @@ UPLOADED_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID"]
 REFRESH_TOKEN = os.environ["YOUTUBE_REFRESH_TOKEN"]
 CLIENT_ID = os.environ["CLIENT_ID"]
 CLIENT_SECRET = os.environ["CLIENT_SECRET"]
+
+# ---- EXACT PUBLISH TIME FUNCTION
+def get_exact_publish_time():
+    now_utc = datetime.now(timezone.utc)
+    ist_now = now_utc + timedelta(hours=5, minutes=30)
+
+    # Morning run
+    if ist_now.hour < 12:
+        target_ist = ist_now.replace(hour=8, minute=0, second=0, microsecond=0)
+    else:
+        target_ist = ist_now.replace(hour=17, minute=0, second=0, microsecond=0)
+
+    target_utc = target_ist - timedelta(hours=5, minutes=30)
+    return target_utc.isoformat().replace("+00:00", "Z")
 
 # ---- DRIVE AUTH
 service_account_info = json.loads(os.environ["SERVICE_ACCOUNT_JSON"])
@@ -41,6 +56,7 @@ else:
 # ---- GET VIDEOS
 results = drive_service.files().list(
     q=f"'{FOLDER_ID}' in parents and mimeType contains 'video/'",
+    orderBy="createdTime asc",
     fields="files(id, name)"
 ).execute()
 
@@ -53,10 +69,11 @@ if not files:
 # Upload MAX 2 videos per run
 videos_to_upload = files[:2]
 
+publish_time = get_exact_publish_time()
+
 for file in videos_to_upload:
     print("Processing:", file["name"])
 
-    # Download file
     request = drive_service.files().get_media(fileId=file["id"])
     fh = io.FileIO(file["name"], "wb")
     downloader = MediaIoBaseDownload(fh, request)
@@ -65,31 +82,13 @@ for file in videos_to_upload:
     while not done:
         status, done = downloader.next_chunk()
 
-    # Create title
     title = f"Bhagavad Gita Daily Dose – Verse of the Day | Episode {episode_number}"
 
     description = """Bhagavad Gita Daily Dose – Verse of the Day
 
-#bhakti
-#devotional
-#spiritual
-#faith
-#god
-#krishna
-#radhakrishna
-#mahadev
-#shiva
-#hanuman
-#bholenath
-#bhajan
-#harekrishna
-#sanatandharma
-#hindugod
-#temple
-#dailybhakti
-#shorts
-#reels
-#viralbhakti
+#bhakti #devotional #spiritual #faith #god #krishna
+#radhakrishna #mahadev #shiva #hanuman #bholenath
+#bhajan #harekrishna #sanatandharma #shorts
 """
 
     media = MediaFileUpload(file["name"], resumable=True)
@@ -104,31 +103,25 @@ for file in videos_to_upload:
                 "categoryId": "22"
             },
             "status": {
-                "privacyStatus": "public"
+                "privacyStatus": "private",
+                "publishAt": publish_time
             }
         },
         media_body=media
     )
 
     response = request.execute()
-    print("Uploaded:", response["id"])
+    print("Scheduled:", response["id"])
 
-    # Move file to uploaded folder
     drive_service.files().update(
         fileId=file["id"],
         addParents=UPLOADED_FOLDER_ID,
-        removeParents=FOLDER_ID,
-        fields="id, parents"
+        removeParents=FOLDER_ID
     ).execute()
 
-    print("Moved to uploaded folder")
-
     os.remove(file["name"])
-
-    # Increase episode number
     episode_number += 1
 
-# Save updated episode number
 with open("episode.txt", "w") as f:
     f.write(str(episode_number))
 
