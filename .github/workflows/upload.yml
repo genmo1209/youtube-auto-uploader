@@ -2,12 +2,8 @@ name: Upload Shorts
 
 on:
   schedule:
-    # 10:00 AM IST (04:30 UTC)
-   - cron: "*/5 * * * *"
-
-    # 10:00 PM IST (16:30 UTC)
-
-
+    - cron: "25 2 * * *"   # 7:55 AM IST
+    - cron: "25 11 * * *"  # 4:55 PM IST
   workflow_dispatch:
 
 jobs:
@@ -25,7 +21,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Run uploader
         run: python upload.py
