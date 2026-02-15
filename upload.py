@@ -1,8 +1,8 @@
 import os
 import io
 import json
+import time
 import requests
-from datetime import datetime, timedelta, timezone
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
@@ -18,52 +18,63 @@ REFRESH_TOKEN = os.environ["YOUTUBE_REFRESH_TOKEN"]
 CLIENT_ID = os.environ["CLIENT_ID"]
 CLIENT_SECRET = os.environ["CLIENT_SECRET"]
 
-# ✅ NEW FACEBOOK VARIABLES
 FACEBOOK_PAGE_ID = os.environ["FACEBOOK_PAGE_ID"]
 FACEBOOK_PAGE_ACCESS_TOKEN = os.environ["FACEBOOK_PAGE_ACCESS_TOKEN"]
-
-
-# ==============================
-# EXACT PUBLISH TIME FUNCTION
-# ==============================
-
-def get_exact_publish_time():
-    now_utc = datetime.now(timezone.utc)
-    ist_now = now_utc + timedelta(hours=5, minutes=30)
-
-    if ist_now.hour < 12:
-        target_ist = ist_now.replace(hour=8, minute=0, second=0, microsecond=0)
-    else:
-        target_ist = ist_now.replace(hour=17, minute=0, second=0, microsecond=0)
-
-    target_utc = target_ist - timedelta(hours=5, minutes=30)
-    return target_utc.isoformat().replace("+00:00", "Z")
-
+INSTAGRAM_BUSINESS_ID = os.environ["INSTAGRAM_BUSINESS_ID"]
 
 # ==============================
-# FACEBOOK UPLOAD FUNCTION
+# FACEBOOK UPLOAD
 # ==============================
 
 def upload_to_facebook(video_path, title, description):
     print("Uploading to Facebook...")
-
     url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/videos"
 
     with open(video_path, "rb") as video_file:
-        files = {
-            "source": video_file
-        }
-
+        files = {"source": video_file}
         data = {
             "title": title,
             "description": description,
             "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
         }
-
         response = requests.post(url, files=files, data=data)
 
     print("Facebook Response:", response.json())
 
+# ==============================
+# INSTAGRAM UPLOAD
+# ==============================
+
+def upload_to_instagram(video_url, caption):
+    print("Uploading to Instagram...")
+
+    container_url = f"https://graph.facebook.com/v24.0/{INSTAGRAM_BUSINESS_ID}/media"
+    container_payload = {
+        "video_url": video_url,
+        "caption": caption,
+        "media_type": "REELS",
+        "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
+    }
+
+    container_response = requests.post(container_url, data=container_payload).json()
+
+    if "id" not in container_response:
+        print("Instagram Container Error:", container_response)
+        return
+
+    creation_id = container_response["id"]
+    print("Instagram Container Created:", creation_id)
+
+    time.sleep(20)
+
+    publish_url = f"https://graph.facebook.com/v24.0/{INSTAGRAM_BUSINESS_ID}/media_publish"
+    publish_payload = {
+        "creation_id": creation_id,
+        "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
+    }
+
+    publish_response = requests.post(publish_url, data=publish_payload).json()
+    print("Instagram Publish Response:", publish_response)
 
 # ==============================
 # DRIVE AUTH
@@ -75,7 +86,6 @@ drive_creds = service_account.Credentials.from_service_account_info(
     scopes=["https://www.googleapis.com/auth/drive"]
 )
 drive_service = build("drive", "v3", credentials=drive_creds)
-
 
 # ==============================
 # YOUTUBE AUTH
@@ -91,9 +101,8 @@ youtube_creds = Credentials(
 )
 youtube = build("youtube", "v3", credentials=youtube_creds)
 
-
 # ==============================
-# READ EPISODE NUMBER
+# EPISODE COUNTER
 # ==============================
 
 if os.path.exists("episode.txt"):
@@ -101,7 +110,6 @@ if os.path.exists("episode.txt"):
         episode_number = int(f.read().strip())
 else:
     episode_number = 1
-
 
 # ==============================
 # GET VIDEOS FROM DRIVE
@@ -119,9 +127,7 @@ if not files:
     print("No videos found.")
     exit()
 
-videos_to_upload = files[:2]
-publish_time = get_exact_publish_time()
-
+videos_to_upload = files[:2]   # 2 videos per run
 
 # ==============================
 # MAIN LOOP
@@ -130,6 +136,7 @@ publish_time = get_exact_publish_time()
 for file in videos_to_upload:
     print("Processing:", file["name"])
 
+    # Download file
     request = drive_service.files().get_media(fileId=file["id"])
     fh = io.FileIO(file["name"], "wb")
     downloader = MediaIoBaseDownload(fh, request)
@@ -138,19 +145,14 @@ for file in videos_to_upload:
     while not done:
         status, done = downloader.next_chunk()
 
-    title = f"Bhagavad Gita Daily Dose – Verse of the Day | Episode {episode_number}"
+    title = f"Bhagavad Gita Daily Dose – Episode {episode_number}"
 
     description = """Bhagavad Gita Daily Dose – Verse of the Day
 
-#bhakti #devotional #spiritual #faith #god #krishna
-#radhakrishna #mahadev #shiva #hanuman #bholenath
-#bhajan #harekrishna #sanatandharma #shorts
+#bhakti #devotional #spiritual #krishna #shorts
 """
 
-    # ==============================
-    # YOUTUBE UPLOAD
-    # ==============================
-
+    # ---------------- YOUTUBE ----------------
     media = MediaFileUpload(file["name"], resumable=True)
 
     request = youtube.videos().insert(
@@ -159,30 +161,32 @@ for file in videos_to_upload:
             "snippet": {
                 "title": title,
                 "description": description,
-                "tags": ["bhakti", "devotional", "gita", "krishna", "shorts"],
+                "tags": ["bhakti", "devotional", "gita"],
                 "categoryId": "22"
             },
             "status": {
-                "privacyStatus": "private",
-                "publishAt": publish_time
+                "privacyStatus": "public"
             }
         },
         media_body=media
     )
 
-    response = request.execute()
-    print("YouTube Scheduled:", response["id"])
+    yt_response = request.execute()
+    print("YouTube Uploaded:", yt_response["id"])
 
-    # ==============================
-    # FACEBOOK UPLOAD
-    # ==============================
-
+    # ---------------- FACEBOOK ----------------
     upload_to_facebook(file["name"], title, description)
 
-    # ==============================
-    # MOVE FILE IN DRIVE
-    # ==============================
+    # ---------------- INSTAGRAM ----------------
+    drive_service.permissions().create(
+        fileId=file["id"],
+        body={"type": "anyone", "role": "reader"}
+    ).execute()
 
+    public_url = f"https://drive.google.com/uc?export=download&id={file['id']}"
+    upload_to_instagram(public_url, description)
+
+    # ---------------- MOVE FILE ----------------
     drive_service.files().update(
         fileId=file["id"],
         addParents=UPLOADED_FOLDER_ID,
@@ -192,12 +196,8 @@ for file in videos_to_upload:
     os.remove(file["name"])
     episode_number += 1
 
-
-# ==============================
-# UPDATE EPISODE NUMBER
-# ==============================
-
+# Save updated episode number
 with open("episode.txt", "w") as f:
     f.write(str(episode_number))
 
-print("Episode number updated successfully.")
+print("All uploads completed successfully.")
