@@ -68,7 +68,7 @@ if not files:
     print("No videos found.")
     exit()
 
-video = files[0]
+video = files[4]
 
 print("Processing:", video["name"])
 
