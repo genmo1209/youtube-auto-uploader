@@ -127,7 +127,7 @@ if not files:
     print("No videos found.")
     exit()
 
-videos_to_upload = files[:2]   # 2 videos per run
+videos_to_upload = files[:4]   # 2 videos per run
 
 # ==============================
 # MAIN LOOP
