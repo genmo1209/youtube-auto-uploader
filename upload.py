@@ -21,10 +21,12 @@ CLIENT_SECRET = os.environ["CLIENT_SECRET"]
 # ==============================
 
 service_account_info = json.loads(os.environ["SERVICE_ACCOUNT_JSON"])
+
 drive_creds = service_account.Credentials.from_service_account_info(
     service_account_info,
     scopes=["https://www.googleapis.com/auth/drive"]
 )
+
 drive_service = build("drive", "v3", credentials=drive_creds)
 
 # ==============================
@@ -68,68 +70,78 @@ if not files:
     print("No videos found.")
     exit()
 
-video = files[4]
-
-print("Processing:", video["name"])
-
 # ==============================
-# DOWNLOAD VIDEO
+# TAKE FIRST 4 VIDEOS
 # ==============================
 
-request = drive_service.files().get_media(fileId=video["id"])
-fh = io.FileIO(video["name"], "wb")
-downloader = MediaIoBaseDownload(fh, request)
+videos_to_upload = files[:4]
 
-done = False
-while not done:
-    status, done = downloader.next_chunk()
+print(f"Found {len(videos_to_upload)} videos to upload")
 
-title = f"Bhagavad Gita Daily Dose – Episode {episode_number}"
+# ==============================
+# PROCESS EACH VIDEO
+# ==============================
 
-description = """Bhagavad Gita Daily Dose – Verse of the Day
+for video in videos_to_upload:
+    print("Processing:", video["name"])
+
+    # DOWNLOAD VIDEO
+    request = drive_service.files().get_media(fileId=video["id"])
+    fh = io.FileIO(video["name"], "wb")
+    downloader = MediaIoBaseDownload(fh, request)
+
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+    # TITLE & DESCRIPTION
+    title = f"Bhagavad Gita Daily Dose – Episode {episode_number}"
+
+    description = """Bhagavad Gita Daily Dose – Verse of the Day
 
 #bhakti #devotional #spiritual #krishna #shorts
 """
 
-# ==============================
-# UPLOAD TO YOUTUBE
-# ==============================
+    # UPLOAD TO YOUTUBE
+    media = MediaFileUpload(video["name"], resumable=True)
 
-media = MediaFileUpload(video["name"], resumable=True)
-
-request = youtube.videos().insert(
-    part="snippet,status",
-    body={
-        "snippet": {
-            "title": title,
-            "description": description,
-            "tags": ["bhakti", "devotional", "gita"],
-            "categoryId": "22"
+    request_upload = youtube.videos().insert(
+        part="snippet,status",
+        body={
+            "snippet": {
+                "title": title,
+                "description": description,
+                "tags": ["bhakti", "devotional", "gita"],
+                "categoryId": "22"
+            },
+            "status": {
+                "privacyStatus": "public"
+            }
         },
-        "status": {
-            "privacyStatus": "public"
-        }
-    },
-    media_body=media
-)
+        media_body=media
+    )
 
-response = request.execute()
-print("YouTube Uploaded:", response["id"])
+    response = request_upload.execute()
+    print("YouTube Uploaded:", response["id"])
+
+    # MOVE FILE TO UPLOADED FOLDER
+    drive_service.files().update(
+        fileId=video["id"],
+        addParents=UPLOADED_FOLDER_ID,
+        removeParents=FOLDER_ID
+    ).execute()
+
+    # DELETE LOCAL FILE
+    os.remove(video["name"])
+
+    # INCREASE EPISODE
+    episode_number += 1
 
 # ==============================
-# MOVE FILE
+# SAVE UPDATED EPISODE NUMBER
 # ==============================
 
-drive_service.files().update(
-    fileId=video["id"],
-    addParents=UPLOADED_FOLDER_ID,
-    removeParents=FOLDER_ID
-).execute()
-
-os.remove(video["name"])
-
-episode_number += 1
 with open("episode.txt", "w") as f:
     f.write(str(episode_number))
 
-print("YouTube upload completed successfully.")
+print("All uploads completed successfully.")
