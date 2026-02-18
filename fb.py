@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import time
 import requests
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -27,7 +28,7 @@ drive_creds = service_account.Credentials.from_service_account_info(
 drive_service = build("drive", "v3", credentials=drive_creds)
 
 # ==============================
-# GET VIDEO FROM DRIVE
+# GET VIDEOS FROM DRIVE
 # ==============================
 
 results = drive_service.files().list(
@@ -42,54 +43,81 @@ if not files:
     print("No videos found.")
     exit()
 
-video = files[0]
-print("Processing:", video["name"])
+# Take first 4 videos
+videos_to_process = files[:4]
+
+print(f"Found {len(videos_to_process)} video(s) to upload.")
 
 # ==============================
-# DOWNLOAD VIDEO
+# PROCESS VIDEOS
 # ==============================
 
-request = drive_service.files().get_media(fileId=video["id"])
-fh = io.FileIO(video["name"], "wb")
-downloader = MediaIoBaseDownload(fh, request)
+for video in videos_to_process:
+    print("\n==============================")
+    print("Processing:", video["name"])
 
-done = False
-while not done:
-    status, done = downloader.next_chunk()
+    # --------------------------
+    # DOWNLOAD VIDEO
+    # --------------------------
+    request = drive_service.files().get_media(fileId=video["id"])
+    fh = io.FileIO(video["name"], "wb")
+    downloader = MediaIoBaseDownload(fh, request)
 
-title = "Bhagavad Gita Daily Dose"
-description = """Bhagavad Gita Daily Dose – Verse of the Day
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+    # --------------------------
+    # VIDEO META
+    # --------------------------
+    title = "Bhagavad Gita Daily Dose"
+    description = """Bhagavad Gita Daily Dose – Verse of the Day
 
 #bhakti #devotional #spiritual #krishna
 """
 
-# ==============================
-# UPLOAD TO FACEBOOK
-# ==============================
+    # --------------------------
+    # UPLOAD TO FACEBOOK
+    # --------------------------
+    url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/videos"
 
-url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/videos"
+    with open(video["name"], "rb") as video_file:
+        files_data = {"source": video_file}
+        data = {
+            "title": title,
+            "description": description,
+            "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
+        }
 
-with open(video["name"], "rb") as video_file:
-    files_data = {"source": video_file}
-    data = {
-        "title": title,
-        "description": description,
-        "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
-    }
-    response = requests.post(url, files=files_data, data=data)
+        response = requests.post(
+            url,
+            files=files_data,
+            data=data,
+            timeout=300
+        )
 
-print("Facebook Response:", response.json())
+    result = response.json()
+    print("Facebook Response:", result)
 
-# ==============================
-# MOVE FILE
-# ==============================
+    if "error" in result:
+        print("❌ Upload failed. Stopping process.")
+        os.remove(video["name"])
+        exit(1)
+    else:
+        print("✅ Upload successful.")
 
-drive_service.files().update(
-    fileId=video["id"],
-    addParents=UPLOADED_FOLDER_ID,
-    removeParents=FOLDER_ID
-).execute()
+    # --------------------------
+    # MOVE FILE TO UPLOADED FOLDER
+    # --------------------------
+    drive_service.files().update(
+        fileId=video["id"],
+        addParents=UPLOADED_FOLDER_ID,
+        removeParents=FOLDER_ID
+    ).execute()
 
-os.remove(video["name"])
+    os.remove(video["name"])
 
-print("Facebook upload completed successfully.")
+    # Optional: small delay to avoid rate limits
+    time.sleep(20)
+
+print("\n🎉 All videos processed successfully.")
