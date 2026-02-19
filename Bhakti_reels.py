@@ -24,7 +24,7 @@ YT_REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN_CH2"]
 # GOOGLE DRIVE AUTH
 # ==============================
 
-service_account_info = json.loads(os.environ["SERVICE_ACCOUNT_JSON"])
+service_account_info = json.loads(os.environ["SERVICE_ACCOUNT_JSON_1"])
 
 drive_creds = service_account.Credentials.from_service_account_info(
     service_account_info,
