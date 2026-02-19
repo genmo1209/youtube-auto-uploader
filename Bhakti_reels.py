@@ -52,21 +52,28 @@ youtube = build("youtube", "v3", credentials=youtube_creds)
 # FETCH VIDEOS FROM DRIVE
 # ==============================
 
-print("🔍 Fetching videos from Drive…")
+print("🔍 Fetching files from Drive...")
+
 results = drive_service.files().list(
-    q=f"'{FOLDER_ID}' in parents and mimeType contains 'video/'",
+    q=f"'{FOLDER_ID}' in parents and trashed=false",
     orderBy="createdTime asc",
-    fields="files(id, name)"
+    supportsAllDrives=True,
+    includeItemsFromAllDrives=True,
+    fields="files(id,name,mimeType)"
 ).execute()
 
-files = results.get("files", [])
+all_files = results.get("files", [])
+
+print("\n📂 DEBUG — Files visible to Service Account:")
+for f in all_files:
+    print(f["name"], "->", f["mimeType"])
+
+# keep only videos
+files = [f for f in all_files if f["mimeType"].startswith("video/")]
 
 if not files:
     print("❌ No videos found.")
     exit()
-
-videos_to_process = files[:4]
-print(f"📁 Found {len(videos_to_process)} video(s) to upload")
 
 # ==============================
 # PROCESS AND UPLOAD
