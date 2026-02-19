@@ -35,4 +35,4 @@ jobs:
           FOLDER_ID_CH2: ${{ secrets.FOLDER_ID_CH2 }}
           UPLOADED_FOLDER_ID_CH2: ${{ secrets.UPLOADED_FOLDER_ID_CH2 }}
           SERVICE_ACCOUNT_JSON_1: ${{ secrets.SERVICE_ACCOUNT_JSON_1 }}
-        run: python Bhakti-reels.py
+        run: python Bhakti_reels.py
