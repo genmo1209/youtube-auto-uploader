@@ -1,0 +1,38 @@
+name: Upload Pravachan Series CH2
+
+on:
+  schedule:
+    - cron: "30 0 * * *"   # 6:00 AM IST
+    - cron: "0 7 * * *"    # 12:30 PM IST
+  workflow_dispatch:
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 📦 Install Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install google-api-python-client google-auth google-auth-oauthlib google-auth-httplib2 requests
+
+      - name: 🚀 Run Upload Script
+        env:
+          YT_CLIENT_ID_CH2: ${{ secrets.YT_CLIENT_ID_CH2 }}
+          YT_CLIENT_SECRET_CH2: ${{ secrets.YT_CLIENT_SECRET_CH2 }}
+          YT_REFRESH_TOKEN_CH2: ${{ secrets.YT_REFRESH_TOKEN_CH2 }}
+          FOLDER_ID_CH2: ${{ secrets.FOLDER_ID_CH2 }}
+          UPLOADED_FOLDER_ID_CH2: ${{ secrets.UPLOADED_FOLDER_ID_CH2 }}
+          SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+        run: python upload_pravachan_youtube_ch2.py
