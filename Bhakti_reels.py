@@ -2,7 +2,7 @@ import os
 import io
 import json
 import time
-import requests
+import random
 
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
@@ -10,20 +10,15 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 # ==============================
-# ENV VARIABLES
+# ENV VARIABLES (CHANNEL 2)
 # ==============================
-# Google Drive (Channel 2)
+
 FOLDER_ID = os.environ["FOLDER_ID_CH2"]
 UPLOADED_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID_CH2"]
 
-# YouTube (Channel 2)
-REFRESH_TOKEN = os.environ["YOUTUBE_REFRESH_TOKEN_CH2"]
-CLIENT_ID = os.environ["CLIENT_ID"]
-CLIENT_SECRET = os.environ["CLIENT_SECRET"]
-
-# Facebook (Channel 2)
-FACEBOOK_PAGE_ID = os.environ["FACEBOOK_PAGE_ID_CH2"]
-FACEBOOK_PAGE_ACCESS_TOKEN = os.environ["FACEBOOK_PAGE_ACCESS_TOKEN_CH2"]
+YT_CLIENT_ID = os.environ["YT_CLIENT_ID_CH2"]
+YT_CLIENT_SECRET = os.environ["YT_CLIENT_SECRET_CH2"]
+YT_REFRESH_TOKEN = os.environ["YT_REFRESH_TOKEN_CH2"]
 
 # ==============================
 # GOOGLE DRIVE AUTH
@@ -44,29 +39,20 @@ drive_service = build("drive", "v3", credentials=drive_creds)
 
 youtube_creds = Credentials(
     None,
-    refresh_token=REFRESH_TOKEN,
+    refresh_token=YT_REFRESH_TOKEN,
     token_uri="https://oauth2.googleapis.com/token",
-    client_id=CLIENT_ID,
-    client_secret=CLIENT_SECRET,
+    client_id=YT_CLIENT_ID,
+    client_secret=YT_CLIENT_SECRET,
     scopes=["https://www.googleapis.com/auth/youtube.upload"]
 )
 
 youtube = build("youtube", "v3", credentials=youtube_creds)
 
 # ==============================
-# EPISODE COUNTER
-# ==============================
-
-if os.path.exists("episode.txt"):
-    with open("episode.txt", "r") as f:
-        episode_number = int(f.read().strip())
-else:
-    episode_number = 1
-
-# ==============================
 # FETCH VIDEOS FROM DRIVE
 # ==============================
 
+print("🔍 Fetching videos from Drive…")
 results = drive_service.files().list(
     q=f"'{FOLDER_ID}' in parents and mimeType contains 'video/'",
     orderBy="createdTime asc",
@@ -76,23 +62,23 @@ results = drive_service.files().list(
 files = results.get("files", [])
 
 if not files:
-    print("No videos found.")
+    print("❌ No videos found.")
     exit()
 
 videos_to_process = files[:4]
-print(f"Found {len(videos_to_process)} video(s)")
+print(f"📁 Found {len(videos_to_process)} video(s) to upload")
 
 # ==============================
-# PROCESS EACH VIDEO
+# PROCESS AND UPLOAD
 # ==============================
 
-for video in videos_to_process:
+for i, video in enumerate(videos_to_process, start=1):
 
-    print("\n==============================")
-    print("Processing:", video["name"])
+    print("\n================================")
+    print("📌 Processing:", video["name"])
 
     # --------------------------
-    # DOWNLOAD FROM DRIVE
+    # DOWNLOAD VIDEO
     # --------------------------
     request = drive_service.files().get_media(fileId=video["id"])
     fh = io.FileIO(video["name"], "wb")
@@ -103,16 +89,28 @@ for video in videos_to_process:
         status, done = downloader.next_chunk()
 
     # --------------------------
-    # VIDEO META
+    # DYNAMIC TITLE
     # --------------------------
-    title = f"Bhagavad Gita Daily Dose – Episode {episode_number}"
-    description = """Bhagavad Gita Daily Dose – Verse of the Day
+    title = f"Pravachan Series #{i:02d}"
 
-#bhakti #devotional #spiritual #krishna #shorts
-"""
+    # --------------------------
+    # DYNAMIC DESCRIPTION + TRENDING HASHTAGS
+    # (Combined popular devotional + Gita-related tags)
+    # ==============================
+
+    description_base = """Pravachan Series – Spiritual Wisdom and Lessons from the Gita
+🙏🙏"""
+
+    hashtags = [
+        "#bhakti", "#bhagavadgita", "#krishna", "#spirituality",
+        "#hinduism", "#lordkrishna"
+    ]
+
+    # Final description with hashtags
+    description = f"{description_base}\n\n{' '.join(hashtags)}"
 
     # ==============================
-    # 1️⃣ UPLOAD TO YOUTUBE
+    # UPLOAD TO YOUTUBE
     # ==============================
 
     try:
@@ -124,7 +122,7 @@ for video in videos_to_process:
                 "snippet": {
                     "title": title,
                     "description": description,
-                    "tags": ["bhakti", "devotional", "gita"],
+                    "tags": hashtags,
                     "categoryId": "22"
                 },
                 "status": {
@@ -135,44 +133,10 @@ for video in videos_to_process:
         )
 
         response = request_upload.execute()
-        print("✅ YouTube Uploaded:", response["id"])
+        print("✅ Uploaded to YouTube (ID):", response["id"])
 
     except Exception as e:
-        print("❌ YouTube Upload Failed:", str(e))
-        os.remove(video["name"])
-        continue
-
-    # ==============================
-    # 2️⃣ UPLOAD TO FACEBOOK
-    # ==============================
-
-    try:
-        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/videos"
-
-        with open(video["name"], "rb") as video_file:
-            files_data = {"source": video_file}
-            data = {
-                "title": title,
-                "description": description,
-                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
-            }
-
-            response = requests.post(
-                url,
-                files=files_data,
-                data=data,
-                timeout=300
-            )
-
-        result = response.json()
-
-        if "error" in result:
-            raise Exception(result)
-
-        print("✅ Facebook Uploaded:", result.get("id"))
-
-    except Exception as e:
-        print("❌ Facebook Upload Failed:", str(e))
+        print("❌ Upload failed:", str(e))
         os.remove(video["name"])
         continue
 
@@ -188,14 +152,11 @@ for video in videos_to_process:
 
     os.remove(video["name"])
 
-    episode_number += 1
-    time.sleep(15)
+    # ==============================
+    # RANDOM SLEEP (1–5 seconds)
+    # ==============================
+    gap = random.randint(1, 5)
+    print(f"⏱ Sleeping for {gap} seconds…")
+    time.sleep(gap)
 
-# ==============================
-# SAVE EPISODE NUMBER
-# ==============================
-
-with open("episode.txt", "w") as f:
-    f.write(str(episode_number))
-
-print("\n🎉 All uploads completed successfully.")
+print("\n🎉 All uploads completed successfully!")
