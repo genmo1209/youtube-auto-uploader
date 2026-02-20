@@ -3,7 +3,6 @@ import io
 import json
 import time
 import random
-import re
 import traceback
 
 from google.oauth2 import service_account
@@ -45,82 +44,52 @@ youtube_creds = Credentials(
     token_uri="https://oauth2.googleapis.com/token",
     client_id=YT_CLIENT_ID,
     client_secret=YT_CLIENT_SECRET,
-    scopes=[
-        "https://www.googleapis.com/auth/youtube.upload",
-        "https://www.googleapis.com/auth/youtube.readonly"
-    ]
+    scopes=["https://www.googleapis.com/auth/youtube.upload"]
 )
 
 youtube = build("youtube", "v3", credentials=youtube_creds)
 
 # ==============================
-# DYNAMIC HOOK ENGINE
+# VIRAL TITLE ENGINE
 # ==============================
 
-hooks = [
-    "Why God Tests You",
+viral_hooks = [
+    "Krishna Says: Stop Overthinking",
     "This Karma Truth Will Shock You",
-    "Stop Overthinking Now",
+    "Why God Delays Your Success",
     "The Truth About Your Suffering",
-    "Why You Feel Stuck in Life",
-    "Krishna’s Powerful Advice",
-    "Most People Ignore This Lesson",
+    "This Message Will Change You",
     "If You Feel Lost, Watch This",
-    "This One Habit Is Ruining You",
-    "Your Mind Is Your Biggest Enemy"
+    "Most People Ignore This Lesson",
+    "Your Mind Is Your Biggest Enemy",
+    "Don’t Skip This Spiritual Message",
+    "This One Habit Is Ruining Your Life"
 ]
 
-emojis = ["🔥", "⚡", "🕉️", "✨", "🚀"]
+emojis = ["⚡", "🔥", "✨", "🚀", "💡", "🕉️"]
 
-def generate_hook():
-    return random.choice(hooks)
-
-def generate_emoji():
-    return random.choice(emojis)
-
-# ==============================
-# GET NEXT EPISODE NUMBER
-# ==============================
-
-def get_next_episode():
-    try:
-        request = youtube.search().list(
-            part="snippet",
-            forMine=True,
-            order="date",
-            maxResults=25,
-            type="video"
-        )
-        response = request.execute()
-
-        max_ep = 0
-
-        for item in response.get("items", []):
-            title = item["snippet"]["title"]
-            match = re.search(r"Ep\s*(\d+)", title, re.IGNORECASE)
-            if match:
-                ep_num = int(match.group(1))
-                if ep_num > max_ep:
-                    max_ep = ep_num
-
-        return max_ep + 1
-
-    except Exception:
-        return 1
+def generate_title():
+    hook = random.choice(viral_hooks)
+    emoji = random.choice(emojis)
+    return f"{hook} {emoji} #Shorts"
 
 # ==============================
-# HASHTAGS
+# HASHTAG ENGINE
 # ==============================
 
-hashtags = [
-    "pravachan",
-    "krishna",
-    "bhagavadgita",
-    "sanatandharma",
-    "spirituality",
-    "shorts",
-    "ytshorts"
+hashtag_groups = [
+    ["krishna", "bhagavadgita", "sanatandharma", "hinduism"],
+    ["spirituality", "mindset", "karma", "innerpeace"],
+    ["motivation", "lifequotes", "wisdom", "selfgrowth"],
+    ["devotional", "bhakti", "godmessage", "dailywisdom"]
 ]
+
+shorts_boost_tags = ["shorts", "ytshorts", "viralshorts"]
+
+def generate_hashtags():
+    group = random.choice(hashtag_groups)
+    all_tags = list(set(group + shorts_boost_tags))
+    return all_tags
 
 # ==============================
 # FETCH VIDEOS FROM DRIVE
@@ -136,8 +105,12 @@ results = drive_service.files().list(
     fields="files(id,name,mimeType)"
 ).execute()
 
+all_files = results.get("files", [])
+
+print(f"📂 Total files found: {len(all_files)}")
+
 video_files = [
-    f for f in results.get("files", [])
+    f for f in all_files
     if f.get("mimeType", "").startswith("video/")
 ]
 
@@ -145,27 +118,29 @@ if not video_files:
     print("❌ No videos found.")
     exit()
 
+print(f"🎬 Video files found: {len(video_files)}")
+
 videos_to_process = video_files[:4]
 
-print(f"🚀 Uploading {len(videos_to_process)} video(s)...")
+print(f"\n🚀 Preparing to upload {len(videos_to_process)} video(s)...")
 
 # ==============================
-# PROCESS & UPLOAD
+# PROCESS AND UPLOAD
 # ==============================
-
-current_episode = get_next_episode()
 
 for video in videos_to_process:
 
     print("\n================================")
 
-    video_id = video["id"]
-    video_name = video["name"]
+    video_id = video.get("id")
+    video_name = video.get("name")
 
     print("📌 Processing:", video_name)
 
     try:
-        # DOWNLOAD
+        # --------------------------
+        # DOWNLOAD VIDEO
+        # --------------------------
         request = drive_service.files().get_media(fileId=video_id)
         fh = io.FileIO(video_name, "wb")
         downloader = MediaIoBaseDownload(fh, request)
@@ -176,22 +151,26 @@ for video in videos_to_process:
 
         fh.close()
 
-        # GENERATE TITLE
-        hook = generate_hook()
-        emoji = generate_emoji()
+        # --------------------------
+        # GENERATE TITLE & HASHTAGS
+        # --------------------------
+        title = generate_title()
+        hashtags = generate_hashtags()
 
-        title = f"{hook} | Pravachan Series Ep {current_episode} {emoji} #Shorts"
+        description_base = """
+🕉️ Daily Krishna Spiritual Wisdom
+Transform Your Mind. Transform Your Life.
 
-        description = f"""
-🕉️ {hook}
-Pravachan Series - Episode {current_episode}
+Watch till the end for a powerful life-changing message 🙏
+"""
 
-Daily Spiritual Wisdom from Bhagavad Gita.
-Watch till the end for powerful life guidance 🙏
+        description = f"{description_base}\n\n" + " ".join(
+            [f"#{tag}" for tag in hashtags]
+        )
 
-""" + " ".join([f"#{tag}" for tag in hashtags])
-
-        # UPLOAD (RESUMABLE)
+        # --------------------------
+        # UPLOAD TO YOUTUBE (RESUMABLE)
+        # --------------------------
         media = MediaFileUpload(video_name, resumable=True)
 
         request_upload = youtube.videos().insert(
@@ -216,9 +195,11 @@ Watch till the end for powerful life guidance 🙏
             if status:
                 print(f"📤 Upload progress: {int(status.progress() * 100)}%")
 
-        print("✅ Uploaded:", title)
+        print("✅ Uploaded to YouTube (ID):", response.get("id"))
 
-        # MOVE FILE
+        # --------------------------
+        # MOVE FILE TO UPLOADED FOLDER
+        # --------------------------
         drive_service.files().update(
             fileId=video_id,
             addParents=UPLOADED_FOLDER_ID,
@@ -227,12 +208,15 @@ Watch till the end for powerful life guidance 🙏
 
         os.remove(video_name)
 
-        current_episode += 1
-
-        time.sleep(random.randint(3, 7))
+        # --------------------------
+        # RANDOM GAP
+        # --------------------------
+        gap = random.randint(3, 7)
+        print(f"⏱ Sleeping for {gap} seconds...")
+        time.sleep(gap)
 
     except Exception as e:
-        print("❌ Error:", str(e))
+        print("❌ Error processing video:", str(e))
         traceback.print_exc()
 
         if os.path.exists(video_name):
@@ -240,4 +224,4 @@ Watch till the end for powerful life guidance 🙏
 
         continue
 
-print("\n🎉 All uploads completed!")
+print("\n🎉 All uploads completed successfully!")
