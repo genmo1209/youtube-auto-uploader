@@ -2,7 +2,9 @@ import os
 import io
 import json
 import time
+import random
 import requests
+from datetime import datetime
 
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
@@ -16,12 +18,10 @@ from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 FOLDER_ID = os.environ["FOLDER_ID"]
 UPLOADED_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID"]
 
-# YouTube
 REFRESH_TOKEN = os.environ["YOUTUBE_REFRESH_TOKEN"]
 CLIENT_ID = os.environ["CLIENT_ID"]
 CLIENT_SECRET = os.environ["CLIENT_SECRET"]
 
-# Facebook
 FACEBOOK_PAGE_ID = os.environ["FACEBOOK_PAGE_ID"]
 FACEBOOK_PAGE_ACCESS_TOKEN = os.environ["FACEBOOK_PAGE_ACCESS_TOKEN"]
 
@@ -64,6 +64,128 @@ else:
     episode_number = 1
 
 # ==============================
+# AI CONTEXTUAL HASHTAG ENGINE
+# ==============================
+
+def generate_contextual_tags(video_name):
+
+    name = video_name.lower()
+
+    topic_map = {
+        "karma": ["karma", "karmayoga", "duty"],
+        "anger": ["anger", "selfcontrol", "innerpeace"],
+        "mind": ["mind", "focus", "clarity"],
+        "fear": ["fearless", "confidence", "courage"],
+        "success": ["success", "discipline", "growth"],
+        "attachment": ["detachment", "vairagya"],
+        "death": ["soul", "atman", "rebirth"],
+        "love": ["divinelove", "radhakrishna"],
+        "stress": ["stressrelief", "calm"],
+        "motivation": ["motivation", "lifelessons"]
+    }
+
+    contextual = []
+
+    for key in topic_map:
+        if key in name:
+            contextual += topic_map[key]
+
+    if not contextual:
+        contextual = ["wisdom", "spiritualgrowth", "krishnawords"]
+
+    return contextual
+
+# ==============================
+# BEST PERFORMING HOOK DETECTOR
+# ==============================
+
+def get_best_performing_hook():
+
+    if not os.path.exists("performance_log.csv"):
+        return None
+
+    hook_views = {}
+
+    with open("performance_log.csv", "r") as log:
+        lines = log.readlines()
+
+    for line in lines:
+        parts = line.strip().split(",")
+
+        if len(parts) < 3:
+            continue
+
+        hook = parts[1]
+
+        if hook not in hook_views:
+            hook_views[hook] = 0
+
+        hook_views[hook] += 1   # Count usage frequency only
+
+    if not hook_views:
+        return None
+
+    best_hook = max(hook_views, key=hook_views.get)
+
+    print(f"🏆 Most Used Hook So Far: {best_hook}")
+
+    return best_hook
+
+# ==============================
+# TITLE + TAG SYSTEM
+# ==============================
+
+title_hooks = [
+    "Stop Scrolling – Krishna Is Speaking To You",
+    "This Krishna Message Will Change Your Life",
+    "One Gita Line That Hits Different",
+    "Your Sign from the Bhagavad Gita Today",
+    "Krishna’s Powerful Advice for Tough Times",
+    "Read This Before You Sleep",
+    "Life Changing Gita Wisdom",
+    "This Verse Feels Personal",
+    "Deep Spiritual Truth of Life",
+    "Krishna’s Secret for Inner Peace"
+]
+
+evergreen_tags = [
+    "bhagavadgita", "krishna", "radhakrishna",
+    "bhakti", "devotional", "spirituality",
+    "sanatandharma", "hinduism"
+]
+
+viral_tags = [
+    "shorts", "youtubeshorts", "viralshorts",
+    "reels", "explorepage", "trending",
+    "reelsindia", "shortsvideo"
+]
+
+emotion_tags = [
+    "motivation", "lifequotes", "wisdom",
+    "mindset", "selfgrowth", "positivevibes"
+]
+
+hindi_tags = [
+    "geeta", "krishnabhakti",
+    "bhaktistatus", "sanatan",
+    "hindudharma", "hindiquotes"
+]
+
+today = datetime.now().strftime("%A").lower()
+
+weekday_special = {
+    "monday": "shivbhakti",
+    "tuesday": "hanuman",
+    "wednesday": "krishnalove",
+    "thursday": "guruvaar",
+    "friday": "laxmimata",
+    "saturday": "shanidev",
+    "sunday": "spiritualsunday"
+}
+
+special_day_tag = weekday_special.get(today, "")
+
+# ==============================
 # FETCH VIDEOS FROM DRIVE
 # ==============================
 
@@ -91,9 +213,6 @@ for video in videos_to_process:
     print("\n==============================")
     print("Processing:", video["name"])
 
-    # --------------------------
-    # DOWNLOAD FROM DRIVE
-    # --------------------------
     request = drive_service.files().get_media(fileId=video["id"])
     fh = io.FileIO(video["name"], "wb")
     downloader = MediaIoBaseDownload(fh, request)
@@ -102,17 +221,42 @@ for video in videos_to_process:
     while not done:
         status, done = downloader.next_chunk()
 
-    # --------------------------
-    # VIDEO META
-    # --------------------------
-    title = f"Bhagavad Gita Daily Dose – Episode {episode_number}"
-    description = """Bhagavad Gita Daily Dose – Verse of the Day
+    # SMART TITLE SELECTION
 
-#bhakti #devotional #spiritual #krishna #shorts
+    best_hook = get_best_performing_hook()
+
+    if best_hook and random.random() < 0.7:
+        chosen_hook = best_hook
+    else:
+        chosen_hook = random.choice(title_hooks)
+
+    title = f"{chosen_hook} | Episode {episode_number}"
+
+    # SMART TAGS
+
+    context_tags = generate_contextual_tags(video["name"])
+
+    selected_tags = list(set(
+        random.sample(evergreen_tags, 3) +
+        random.sample(viral_tags, 3) +
+        random.sample(emotion_tags, 3) +
+        random.sample(hindi_tags, 2) +
+        random.sample(context_tags, min(3, len(context_tags))) +
+        ([special_day_tag] if special_day_tag else [])
+    ))
+
+    hashtags = " ".join([f"#{tag}" for tag in selected_tags])
+
+    description = f"""
+Daily Krishna Wisdom 🙏
+
+Ancient knowledge for modern success.
+
+{hashtags}
 """
 
     # ==============================
-    # 1️⃣ UPLOAD TO YOUTUBE
+    # UPLOAD TO YOUTUBE
     # ==============================
 
     try:
@@ -124,7 +268,7 @@ for video in videos_to_process:
                 "snippet": {
                     "title": title,
                     "description": description,
-                    "tags": ["bhakti", "devotional", "gita"],
+                    "tags": selected_tags,
                     "categoryId": "22"
                 },
                 "status": {
@@ -135,7 +279,14 @@ for video in videos_to_process:
         )
 
         response = request_upload.execute()
-        print("✅ YouTube Uploaded:", response["id"])
+        video_id = response["id"]
+
+        print("✅ YouTube Uploaded:", video_id)
+
+        used_hook = chosen_hook
+
+        with open("performance_log.csv", "a") as log:
+            log.write(f"{video_id},{used_hook},{title},{datetime.now()}\n")
 
     except Exception as e:
         print("❌ YouTube Upload Failed:", str(e))
@@ -143,7 +294,7 @@ for video in videos_to_process:
         continue
 
     # ==============================
-    # 2️⃣ UPLOAD TO FACEBOOK
+    # UPLOAD TO FACEBOOK
     # ==============================
 
     try:
@@ -173,12 +324,6 @@ for video in videos_to_process:
 
     except Exception as e:
         print("❌ Facebook Upload Failed:", str(e))
-        os.remove(video["name"])
-        continue
-
-    # ==============================
-    # MOVE FILE TO UPLOADED FOLDER
-    # ==============================
 
     drive_service.files().update(
         fileId=video["id"],
@@ -190,10 +335,6 @@ for video in videos_to_process:
 
     episode_number += 1
     time.sleep(15)
-
-# ==============================
-# SAVE EPISODE NUMBER
-# ==============================
 
 with open("episode.txt", "w") as f:
     f.write(str(episode_number))
