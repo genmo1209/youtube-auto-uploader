@@ -38,7 +38,7 @@ drive_service = build("drive", "v3", credentials=drive_creds)
 # ==============================
 
 youtube_creds = Credentials(
-    None,
+    token=None,
     refresh_token=YT_REFRESH_TOKEN,
     token_uri="https://oauth2.googleapis.com/token",
     client_id=YT_CLIENT_ID,
@@ -59,15 +59,18 @@ results = drive_service.files().list(
     orderBy="createdTime asc",
     supportsAllDrives=True,
     includeItemsFromAllDrives=True,
-    fields="files(id,mimeType)"
+    fields="files(id,name,mimeType)"
 ).execute()
 
 all_files = results.get("files", [])
 
 print(f"📂 Total files found: {len(all_files)}")
 
-# Keep only video files
-video_files = [f for f in all_files if f["mimeType"].startswith("video/")]
+# Keep only video files safely
+video_files = [
+    f for f in all_files
+    if f.get("mimeType", "").startswith("video/")
+]
 
 if not video_files:
     print("❌ No videos found.")
@@ -90,44 +93,50 @@ print(f"\n🚀 Preparing to upload {len(videos_to_process)} video(s)...")
 for i, video in enumerate(videos_to_process, start=1):
 
     print("\n================================")
-    print("📌 Processing:", video["name"])
 
-    # --------------------------
-    # DOWNLOAD VIDEO
-    # --------------------------
-    request = drive_service.files().get_media(fileId=video["id"])
-    fh = io.FileIO(video["name"], "wb")
-    downloader = MediaIoBaseDownload(fh, request)
+    video_id = video.get("id")
+    video_name = video.get("name", f"video_{i}.mp4")
 
-    done = False
-    while not done:
-        status, done = downloader.next_chunk()
-
-    # --------------------------
-    # DYNAMIC TITLE
-    # --------------------------
-    title = f"Pravachan Series #{i:02d}"
-
-    # --------------------------
-    # DESCRIPTION + HASHTAGS
-    # --------------------------
-
-    description_base = """Pravachan Series – Spiritual Wisdom and Lessons from the Gita
-🙏🙏"""
-
-    hashtags = [
-        "bhakti", "bhagavadgita", "krishna",
-        "spirituality", "hinduism", "lordkrishna"
-    ]
-
-    description = f"{description_base}\n\n" + " ".join([f"#{tag}" for tag in hashtags])
-
-    # --------------------------
-    # UPLOAD TO YOUTUBE
-    # --------------------------
+    print("📌 Processing:", video_name)
 
     try:
-        media = MediaFileUpload(video["name"], resumable=True)
+        # --------------------------
+        # DOWNLOAD VIDEO
+        # --------------------------
+        request = drive_service.files().get_media(fileId=video_id)
+        fh = io.FileIO(video_name, "wb")
+        downloader = MediaIoBaseDownload(fh, request)
+
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+
+        fh.close()
+
+        # --------------------------
+        # DYNAMIC TITLE
+        # --------------------------
+        title = f"Pravachan Series #{i:02d}"
+
+        # --------------------------
+        # DESCRIPTION + HASHTAGS
+        # --------------------------
+        description_base = """Pravachan Series – Spiritual Wisdom and Lessons from the Gita
+🙏🙏"""
+
+        hashtags = [
+            "bhakti", "bhagavadgita", "krishna",
+            "spirituality", "hinduism", "lordkrishna"
+        ]
+
+        description = f"{description_base}\n\n" + " ".join(
+            [f"#{tag}" for tag in hashtags]
+        )
+
+        # --------------------------
+        # UPLOAD TO YOUTUBE
+        # --------------------------
+        media = MediaFileUpload(video_name, resumable=True)
 
         request_upload = youtube.videos().insert(
             part="snippet,status",
@@ -146,30 +155,33 @@ for i, video in enumerate(videos_to_process, start=1):
         )
 
         response = request_upload.execute()
-        print("✅ Uploaded to YouTube (ID):", response["id"])
+        print("✅ Uploaded to YouTube (ID):", response.get("id"))
+
+        # --------------------------
+        # MOVE FILE TO UPLOADED FOLDER
+        # --------------------------
+        drive_service.files().update(
+            fileId=video_id,
+            addParents=UPLOADED_FOLDER_ID,
+            removeParents=FOLDER_ID
+        ).execute()
+
+        # Remove local file
+        os.remove(video_name)
+
+        # --------------------------
+        # RANDOM SLEEP (1–5 sec)
+        # --------------------------
+        gap = random.randint(1, 5)
+        print(f"⏱ Sleeping for {gap} seconds…")
+        time.sleep(gap)
 
     except Exception as e:
-        print("❌ Upload failed:", str(e))
-        os.remove(video["name"])
+        print("❌ Error processing video:", str(e))
+
+        if os.path.exists(video_name):
+            os.remove(video_name)
+
         continue
-
-    # --------------------------
-    # MOVE FILE TO UPLOADED FOLDER
-    # --------------------------
-
-    drive_service.files().update(
-        fileId=video["id"],
-        addParents=UPLOADED_FOLDER_ID,
-        removeParents=FOLDER_ID
-    ).execute()
-
-    os.remove(video["name"])
-
-    # --------------------------
-    # RANDOM SLEEP (1–5 sec)
-    # --------------------------
-    gap = random.randint(1, 5)
-    print(f"⏱ Sleeping for {gap} seconds…")
-    time.sleep(gap)
 
 print("\n🎉 All uploads completed successfully!")
