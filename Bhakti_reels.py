@@ -68,12 +68,20 @@ print("\n📂 DEBUG — Files visible to Service Account:")
 for f in all_files:
     print(f["name"], "->", f["mimeType"])
 
-# keep only videos
-files = [f for f in all_files if f["mimeType"].startswith("video/")]
+# Keep only video files
+video_files = [f for f in all_files if f["mimeType"].startswith("video/")]
 
-if not files:
+if not video_files:
     print("❌ No videos found.")
     exit()
+
+# ==============================
+# UPLOAD ONLY 4 VIDEOS PER RUN
+# ==============================
+
+videos_to_process = video_files[:4]
+
+print(f"\n🚀 Preparing to upload {len(videos_to_process)} video(s)...")
 
 # ==============================
 # PROCESS AND UPLOAD
@@ -101,24 +109,22 @@ for i, video in enumerate(videos_to_process, start=1):
     title = f"Pravachan Series #{i:02d}"
 
     # --------------------------
-    # DYNAMIC DESCRIPTION + TRENDING HASHTAGS
-    # (Combined popular devotional + Gita-related tags)
-    # ==============================
+    # DESCRIPTION + HASHTAGS
+    # --------------------------
 
     description_base = """Pravachan Series – Spiritual Wisdom and Lessons from the Gita
 🙏🙏"""
 
     hashtags = [
-        "#bhakti", "#bhagavadgita", "#krishna", "#spirituality",
-        "#hinduism", "#lordkrishna"
+        "bhakti", "bhagavadgita", "krishna",
+        "spirituality", "hinduism", "lordkrishna"
     ]
 
-    # Final description with hashtags
-    description = f"{description_base}\n\n{' '.join(hashtags)}"
+    description = f"{description_base}\n\n" + " ".join([f"#{tag}" for tag in hashtags])
 
-    # ==============================
+    # --------------------------
     # UPLOAD TO YOUTUBE
-    # ==============================
+    # --------------------------
 
     try:
         media = MediaFileUpload(video["name"], resumable=True)
@@ -147,9 +153,9 @@ for i, video in enumerate(videos_to_process, start=1):
         os.remove(video["name"])
         continue
 
-    # ==============================
+    # --------------------------
     # MOVE FILE TO UPLOADED FOLDER
-    # ==============================
+    # --------------------------
 
     drive_service.files().update(
         fileId=video["id"],
@@ -159,9 +165,9 @@ for i, video in enumerate(videos_to_process, start=1):
 
     os.remove(video["name"])
 
-    # ==============================
-    # RANDOM SLEEP (1–5 seconds)
-    # ==============================
+    # --------------------------
+    # RANDOM SLEEP (1–5 sec)
+    # --------------------------
     gap = random.randint(1, 5)
     print(f"⏱ Sleeping for {gap} seconds…")
     time.sleep(gap)
