@@ -59,14 +59,12 @@ results = drive_service.files().list(
     orderBy="createdTime asc",
     supportsAllDrives=True,
     includeItemsFromAllDrives=True,
-    fields="files(id,name,mimeType)"
+    fields="files(id,mimeType)"
 ).execute()
 
 all_files = results.get("files", [])
 
-print("\n📂 DEBUG — Files visible to Service Account:")
-for f in all_files:
-    print(f["name"], "->", f["mimeType"])
+print(f"📂 Total files found: {len(all_files)}")
 
 # Keep only video files
 video_files = [f for f in all_files if f["mimeType"].startswith("video/")]
@@ -74,6 +72,8 @@ video_files = [f for f in all_files if f["mimeType"].startswith("video/")]
 if not video_files:
     print("❌ No videos found.")
     exit()
+
+print(f"🎬 Video files found: {len(video_files)}")
 
 # ==============================
 # UPLOAD ONLY 4 VIDEOS PER RUN
