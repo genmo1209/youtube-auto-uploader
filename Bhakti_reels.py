@@ -12,7 +12,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
 # ==============================
-# ENV VARIABLES
+# ENV VARIABLES (CHANNEL 2)
 # ==============================
 
 FOLDER_ID = os.environ["FOLDER_ID_CH2"]
@@ -54,36 +54,29 @@ youtube_creds = Credentials(
 youtube = build("youtube", "v3", credentials=youtube_creds)
 
 # ==============================
-# HINGLISH HOOK ENGINE (AUTO MATCH)
+# DYNAMIC HOOK ENGINE
 # ==============================
 
-def detect_hook_from_filename(filename):
-    name = filename.lower()
+hooks = [
+    "Why God Tests You",
+    "This Karma Truth Will Shock You",
+    "Stop Overthinking Now",
+    "The Truth About Your Suffering",
+    "Why You Feel Stuck in Life",
+    "Krishna’s Powerful Advice",
+    "Most People Ignore This Lesson",
+    "If You Feel Lost, Watch This",
+    "This One Habit Is Ruining You",
+    "Your Mind Is Your Biggest Enemy"
+]
 
-    if "karma" in name:
-        return "Karma Kabhi Maaf Nahi Karta"
-    elif "overthink" in name:
-        return "Overthinking Chhodo Warna Nuksaan Hoga"
-    elif "anger" in name or "gussa" in name:
-        return "Gussa Aapko Barbaad Kar Dega"
-    elif "success" in name:
-        return "Success Kyun Delay Hota Hai?"
-    elif "fear" in name or "dar" in name:
-        return "Dar Hi Aapko Rok Raha Hai"
-    elif "mind" in name:
-        return "Mind Control Nahi Kiya To Life Control Nahi Hogi"
-    else:
-        default_hooks = [
-            "Bhagwan Aapko Test Kyun Karte Hain?",
-            "Ye Sach Sunna Zaroori Hai",
-            "Aaj Ka Sabse Powerful Pravachan",
-            "Zindagi Badal Dene Wali Baat",
-            "Is Galti Ki Wajah Se Dukh Milta Hai"
-        ]
-        return random.choice(default_hooks)
+emojis = ["🔥", "⚡", "🕉️", "✨", "🚀"]
 
-def random_emoji():
-    return random.choice(["🔥", "⚡", "🕉️", "🚀", "✨"])
+def generate_hook():
+    return random.choice(hooks)
+
+def generate_emoji():
+    return random.choice(emojis)
 
 # ==============================
 # GET NEXT EPISODE NUMBER
@@ -106,9 +99,9 @@ def get_next_episode():
             title = item["snippet"]["title"]
             match = re.search(r"Ep\s*(\d+)", title, re.IGNORECASE)
             if match:
-                ep = int(match.group(1))
-                if ep > max_ep:
-                    max_ep = ep
+                ep_num = int(match.group(1))
+                if ep_num > max_ep:
+                    max_ep = ep_num
 
         return max_ep + 1
 
@@ -124,8 +117,7 @@ hashtags = [
     "krishna",
     "bhagavadgita",
     "sanatandharma",
-    "motivation",
-    "hindimotivation",
+    "spirituality",
     "shorts",
     "ytshorts"
 ]
@@ -154,13 +146,14 @@ if not video_files:
     exit()
 
 videos_to_process = video_files[:4]
-current_episode = get_next_episode()
 
 print(f"🚀 Uploading {len(videos_to_process)} video(s)...")
 
 # ==============================
 # PROCESS & UPLOAD
 # ==============================
+
+current_episode = get_next_episode()
 
 for video in videos_to_process:
 
@@ -172,7 +165,7 @@ for video in videos_to_process:
     print("📌 Processing:", video_name)
 
     try:
-        # DOWNLOAD VIDEO
+        # DOWNLOAD
         request = drive_service.files().get_media(fileId=video_id)
         fh = io.FileIO(video_name, "wb")
         downloader = MediaIoBaseDownload(fh, request)
@@ -183,9 +176,9 @@ for video in videos_to_process:
 
         fh.close()
 
-        # AUTO HOOK BASED ON FILENAME
-        hook = detect_hook_from_filename(video_name)
-        emoji = random_emoji()
+        # GENERATE TITLE
+        hook = generate_hook()
+        emoji = generate_emoji()
 
         title = f"{hook} | Pravachan Series Ep {current_episode} {emoji} #Shorts"
 
@@ -193,12 +186,12 @@ for video in videos_to_process:
 🕉️ {hook}
 Pravachan Series - Episode {current_episode}
 
-Bhagavad Gita se li gayi powerful seekh.
-Agar aap life me clarity chahte hain, ye video end tak dekhiye 🙏
+Daily Spiritual Wisdom from Bhagavad Gita.
+Watch till the end for powerful life guidance 🙏
 
 """ + " ".join([f"#{tag}" for tag in hashtags])
 
-        # UPLOAD
+        # UPLOAD (RESUMABLE)
         media = MediaFileUpload(video_name, resumable=True)
 
         request_upload = youtube.videos().insert(
@@ -235,6 +228,7 @@ Agar aap life me clarity chahte hain, ye video end tak dekhiye 🙏
         os.remove(video_name)
 
         current_episode += 1
+
         time.sleep(random.randint(3, 7))
 
     except Exception as e:
@@ -246,4 +240,4 @@ Agar aap life me clarity chahte hain, ye video end tak dekhiye 🙏
 
         continue
 
-print("\n🎉 All uploads completed successfully!")
+print("\n🎉 All uploads completed!")
