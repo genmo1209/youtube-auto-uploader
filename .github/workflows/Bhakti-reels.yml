@@ -34,5 +34,5 @@ jobs:
           YT_REFRESH_TOKEN_CH2: ${{ secrets.YT_REFRESH_TOKEN_CH2 }}
           FOLDER_ID_CH2: ${{ secrets.FOLDER_ID_CH2 }}
           UPLOADED_FOLDER_ID_CH2: ${{ secrets.UPLOADED_FOLDER_ID_CH2 }}
-          SERVICE_ACCOUNT_JSON_1: ${{ secrets.SERVICE_ACCOUNT_JSON_1 }}
+          SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
         run: python Bhakti_reels.py
