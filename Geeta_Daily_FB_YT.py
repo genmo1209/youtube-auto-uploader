@@ -1,28 +1,48 @@
 import os
-import re
+import io
+import json
+import time
 import random
-from collections import defaultdict
+import requests
+from datetime import datetime
 
+from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 
-# ==========================================
-# ENV VARIABLES (SET IN GITHUB SECRETS)
-# ==========================================
+# ==============================
+# ENV VARIABLES
+# ==============================
 
+FOLDER_ID = os.environ["FOLDER_ID"]
+UPLOADED_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID"]
+
+REFRESH_TOKEN = os.environ["REFRESH_TOKEN"]
 CLIENT_ID = os.environ["CLIENT_ID"]
 CLIENT_SECRET = os.environ["CLIENT_SECRET"]
-REFRESH_TOKEN = os.environ["REFRESH_TOKEN"]
 
-VIDEO_FOLDER = "videos"   # Folder containing shorts
-MAX_RESULTS = 50          # Fetch last 50 videos for analysis
+FACEBOOK_PAGE_ID = os.environ["FACEBOOK_PAGE_ID"]
+FACEBOOK_PAGE_ACCESS_TOKEN = os.environ["FACEBOOK_PAGE_ACCESS_TOKEN"]
 
-# ==========================================
-# AUTHENTICATION (REFRESH TOKEN BASED)
-# ==========================================
+# ==============================
+# GOOGLE DRIVE AUTH
+# ==============================
 
-creds = Credentials(
+service_account_info = json.loads(os.environ["SERVICE_ACCOUNT_JSON"])
+
+drive_creds = service_account.Credentials.from_service_account_info(
+    service_account_info,
+    scopes=["https://www.googleapis.com/auth/drive"]
+)
+
+drive_service = build("drive", "v3", credentials=drive_creds)
+
+# ==============================
+# YOUTUBE AUTH
+# ==============================
+
+youtube_creds = Credentials(
     None,
     refresh_token=REFRESH_TOKEN,
     token_uri="https://oauth2.googleapis.com/token",
@@ -31,147 +51,292 @@ creds = Credentials(
     scopes=["https://www.googleapis.com/auth/youtube"]
 )
 
-youtube = build("youtube", "v3", credentials=creds)
+youtube = build("youtube", "v3", credentials=youtube_creds)
 
-# ==========================================
-# FETCH RECENT VIDEOS
-# ==========================================
+# ==============================
+# EPISODE COUNTER
+# ==============================
 
-def get_recent_videos():
-    print("📊 Fetching recent videos for hook optimization...")
+if os.path.exists("episode.txt"):
+    with open("episode.txt", "r") as f:
+        episode_number = int(f.read().strip())
+else:
+    episode_number = 1
 
-    request = youtube.search().list(
-        part="id",
-        forMine=True,
-        type="video",
-        order="date",
-        maxResults=MAX_RESULTS
-    )
-    response = request.execute()
+# ==============================
+# AI CONTEXTUAL HASHTAG ENGINE
+# ==============================
 
-    video_ids = [item["id"]["videoId"] for item in response["items"]]
+def generate_contextual_tags(video_name):
 
-    if not video_ids:
-        return []
+    name = video_name.lower()
 
-    stats_request = youtube.videos().list(
-        part="statistics,snippet",
-        id=",".join(video_ids)
-    )
-    stats_response = stats_request.execute()
+    topic_map = {
+        "karma": ["karma", "karmayoga", "duty"],
+        "anger": ["anger", "selfcontrol", "innerpeace"],
+        "mind": ["mind", "focus", "clarity"],
+        "fear": ["fearless", "confidence", "courage"],
+        "success": ["success", "discipline", "growth"],
+        "attachment": ["detachment", "vairagya"],
+        "death": ["soul", "atman", "rebirth"],
+        "love": ["divinelove", "radhakrishna"],
+        "stress": ["stressrelief", "calm"],
+        "motivation": ["motivation", "lifelessons"]
+    }
 
-    videos = []
+    contextual = []
 
-    for item in stats_response["items"]:
-        title = item["snippet"]["title"]
-        views = int(item["statistics"].get("viewCount", 0))
+    for key in topic_map:
+        if key in name:
+            contextual += topic_map[key]
 
-        videos.append({
-            "title": title,
-            "views": views
-        })
+    if not contextual:
+        contextual = ["wisdom", "spiritualgrowth", "krishnawords"]
 
-    return videos
+    return contextual
 
-# ==========================================
-# HOOK EXTRACTION
-# ==========================================
+# ==============================
+# BEST PERFORMING HOOK DETECTOR
+# ==============================
 
-def extract_hook(title):
-    words = title.split()
-    return " ".join(words[:4]).strip()
+def get_best_performing_hook():
 
-def get_best_hook(videos):
-    hook_views = defaultdict(int)
-    hook_count = defaultdict(int)
+    if not os.path.exists("performance_log.csv"):
+        return None
 
-    for video in videos:
-        hook = extract_hook(video["title"])
-        hook_views[hook] += video["views"]
-        hook_count[hook] += 1
+    hook_views = {}
+
+    with open("performance_log.csv", "r") as log:
+        lines = log.readlines()
+
+    for line in lines:
+        parts = line.strip().split(",")
+
+        if len(parts) < 3:
+            continue
+
+        hook = parts[1]
+
+        if hook not in hook_views:
+            hook_views[hook] = 0
+
+        hook_views[hook] += 1   # Count usage frequency only
 
     if not hook_views:
         return None
 
-    hook_score = {
-        hook: hook_views[hook] / hook_count[hook]
-        for hook in hook_views
-    }
+    best_hook = max(hook_views, key=hook_views.get)
 
-    best_hook = max(hook_score, key=hook_score.get)
-    print(f"🏆 Best Performing Hook: {best_hook}")
+    print(f"🏆 Most Used Hook So Far: {best_hook}")
+
     return best_hook
 
-# ==========================================
-# GENERATE TITLE
-# ==========================================
+# ==============================
+# TITLE + TAG SYSTEM
+# ==============================
 
-def generate_title(best_hook):
-    fallback_hooks = [
-        "Why Krishna Said This",
-        "Krishna Warned About This",
-        "Stop Doing This Today",
-        "This One Line Will Change You"
-    ]
+title_hooks = [
+    "Stop Scrolling – Krishna Is Speaking To You",
+    "This Krishna Message Will Change Your Life",
+    "One Gita Line That Hits Different",
+    "Your Sign from the Bhagavad Gita Today",
+    "Krishna’s Powerful Advice for Tough Times",
+    "Read This Before You Sleep",
+    "Life Changing Gita Wisdom",
+    "This Verse Feels Personal",
+    "Deep Spiritual Truth of Life",
+    "Krishna’s Secret for Inner Peace"
+]
 
-    if not best_hook:
-        best_hook = random.choice(fallback_hooks)
+evergreen_tags = [
+    "bhagavadgita", "krishna", "radhakrishna",
+    "bhakti", "devotional", "spirituality",
+    "sanatandharma", "hinduism"
+]
 
-    episode_number = random.randint(1, 999)
+viral_tags = [
+    "shorts", "youtubeshorts", "viralshorts",
+    "reels", "explorepage", "trending",
+    "reelsindia", "shortsvideo"
+]
 
-    return f"{best_hook} | Bhagavad Gita Short #{episode_number} #shorts"
+emotion_tags = [
+    "motivation", "lifequotes", "wisdom",
+    "mindset", "selfgrowth", "positivevibes"
+]
 
-# ==========================================
-# UPLOAD VIDEO
-# ==========================================
+hindi_tags = [
+    "geeta", "krishnabhakti",
+    "bhaktistatus", "sanatan",
+    "hindudharma", "hindiquotes"
+]
 
-def upload_video(file_path, title):
-    print(f"🚀 Uploading: {file_path}")
+today = datetime.now().strftime("%A").lower()
 
-    body = {
-        "snippet": {
-            "title": title,
-            "description": "Daily Bhagavad Gita wisdom 🙏 #shorts",
-            "tags": ["Bhagavad Gita", "Krishna", "Spiritual", "Motivation"],
-            "categoryId": "22"
-        },
-        "status": {
-            "privacyStatus": "public"
-        }
-    }
+weekday_special = {
+    "monday": "shivbhakti",
+    "tuesday": "hanuman",
+    "wednesday": "krishnalove",
+    "thursday": "guruvaar",
+    "friday": "laxmimata",
+    "saturday": "shanidev",
+    "sunday": "spiritualsunday"
+}
 
-    media = MediaFileUpload(file_path, chunksize=-1, resumable=True)
+special_day_tag = weekday_special.get(today, "")
 
-    request = youtube.videos().insert(
-        part="snippet,status",
-        body=body,
-        media_body=media
-    )
+# ==============================
+# FETCH VIDEOS FROM DRIVE
+# ==============================
 
-    response = None
-    while response is None:
-        status, response = request.next_chunk()
+results = drive_service.files().list(
+    q=f"'{FOLDER_ID}' in parents and mimeType contains 'video/'",
+    orderBy="createdTime asc",
+    fields="files(id, name)"
+).execute()
 
-    print(f"✅ Uploaded: {response['id']}")
+files = results.get("files", [])
 
-# ==========================================
-# MAIN PROCESS
-# ==========================================
+if not files:
+    print("No videos found.")
+    exit()
 
-def main():
-    videos = get_recent_videos()
-    best_hook = get_best_hook(videos)
+videos_to_process = files[:4]
+print(f"Found {len(videos_to_process)} video(s)")
 
-    for file in os.listdir(VIDEO_FOLDER):
-        if file.endswith(".mp4"):
-            file_path = os.path.join(VIDEO_FOLDER, file)
+# ==============================
+# PROCESS EACH VIDEO
+# ==============================
 
-            title = generate_title(best_hook)
-            upload_video(file_path, title)
+for video in videos_to_process:
 
-            # Upload one video per run
-            break
+    print("\n==============================")
+    print("Processing:", video["name"])
 
+    request = drive_service.files().get_media(fileId=video["id"])
+    fh = io.FileIO(video["name"], "wb")
+    downloader = MediaIoBaseDownload(fh, request)
 
-if __name__ == "__main__":
-    main()
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+    # SMART TITLE SELECTION
+
+    best_hook = get_best_performing_hook()
+
+    if best_hook and random.random() < 0.7:
+        chosen_hook = best_hook
+    else:
+        chosen_hook = random.choice(title_hooks)
+
+    title = f"{chosen_hook} | Episode {episode_number}"
+
+    # SMART TAGS
+
+    context_tags = generate_contextual_tags(video["name"])
+
+    selected_tags = list(set(
+        random.sample(evergreen_tags, 3) +
+        random.sample(viral_tags, 3) +
+        random.sample(emotion_tags, 3) +
+        random.sample(hindi_tags, 2) +
+        random.sample(context_tags, min(3, len(context_tags))) +
+        ([special_day_tag] if special_day_tag else [])
+    ))
+
+    hashtags = " ".join([f"#{tag}" for tag in selected_tags])
+
+    description = f"""
+Daily Krishna Wisdom 🙏
+
+Ancient knowledge for modern success.
+
+{hashtags}
+"""
+
+    # ==============================
+    # UPLOAD TO YOUTUBE
+    # ==============================
+
+    try:
+        media = MediaFileUpload(video["name"], resumable=True)
+
+        request_upload = youtube.videos().insert(
+            part="snippet,status",
+            body={
+                "snippet": {
+                    "title": title,
+                    "description": description,
+                    "tags": selected_tags,
+                    "categoryId": "22"
+                },
+                "status": {
+                    "privacyStatus": "public"
+                }
+            },
+            media_body=media
+        )
+
+        response = request_upload.execute()
+        video_id = response["id"]
+
+        print("✅ YouTube Uploaded:", video_id)
+
+        used_hook = chosen_hook
+
+        with open("performance_log.csv", "a") as log:
+            log.write(f"{video_id},{used_hook},{title},{datetime.now()}\n")
+
+    except Exception as e:
+        print("❌ YouTube Upload Failed:", str(e))
+        os.remove(video["name"])
+        continue
+
+    # ==============================
+    # UPLOAD TO FACEBOOK
+    # ==============================
+
+    try:
+        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/videos"
+
+        with open(video["name"], "rb") as video_file:
+            files_data = {"source": video_file}
+            data = {
+                "title": title,
+                "description": description,
+                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
+            }
+
+            response = requests.post(
+                url,
+                files=files_data,
+                data=data,
+                timeout=300
+            )
+
+        result = response.json()
+
+        if "error" in result:
+            raise Exception(result)
+
+        print("✅ Facebook Uploaded:", result.get("id"))
+
+    except Exception as e:
+        print("❌ Facebook Upload Failed:", str(e))
+
+    drive_service.files().update(
+        fileId=video["id"],
+        addParents=UPLOADED_FOLDER_ID,
+        removeParents=FOLDER_ID
+    ).execute()
+
+    os.remove(video["name"])
+
+    episode_number += 1
+    time.sleep(15)
+
+with open("episode.txt", "w") as f:
+    f.write(str(episode_number))
+
+print("\n🎉 All uploads completed successfully.")
