@@ -28,6 +28,7 @@ creds = Credentials(
     token_uri="https://oauth2.googleapis.com/token",
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
+    scopes=["https://www.googleapis.com/auth/youtube"]
 )
 
 youtube = build("youtube", "v3", credentials=creds)
