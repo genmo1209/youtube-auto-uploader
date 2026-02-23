@@ -47,7 +47,7 @@ jobs:
           FOLDER_ID: ${{ secrets.FOLDER_ID }}
           UPLOADED_FOLDER_ID: ${{ secrets.UPLOADED_FOLDER_ID }}
           SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
-          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          REFRESH_TOKEN: ${{ secrets.REFRESH_TOKEN }}
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
           FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
