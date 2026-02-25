@@ -298,7 +298,7 @@ Ancient knowledge for modern success.
     # ==============================
 
     try:
-        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/videos"
+        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
 
         with open(video["name"], "rb") as video_file:
             files_data = {"source": video_file}
