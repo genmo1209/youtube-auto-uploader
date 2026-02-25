@@ -44,7 +44,7 @@ drive_service = build("drive", "v3", credentials=drive_creds)
 
 youtube_creds = Credentials(
     None,
-    refresh_token=REFRESH_TOKEN,
+    #refresh_token=REFRESH_TOKEN,
     token_uri="https://oauth2.googleapis.com/token",
     client_id=CLIENT_ID,
     client_secret=CLIENT_SECRET,
@@ -297,33 +297,67 @@ Ancient knowledge for modern success.
     # UPLOAD TO FACEBOOK
     # ==============================
 
-    try:
-        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
+    # ==============================
+# FACEBOOK REELS UPLOAD (CORRECT)
+# ==============================
 
-        with open(video["name"], "rb") as video_file:
-            files_data = {"source": video_file}
-            data = {
-                "title": title,
-                "description": description,
-                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
-            }
+try:
+    file_path = video["name"]
+    file_size = os.path.getsize(file_path)
 
-            response = requests.post(
-                url,
-                files=files_data,
-                data=data,
-                timeout=300
-            )
+    # STEP 1 — START
+    start_url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
 
-        result = response.json()
+    start_response = requests.post(
+        start_url,
+        data={
+            "upload_phase": "start",
+            "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
+        }
+    ).json()
 
-        if "error" in result:
-            raise Exception(result)
+    if "error" in start_response:
+        raise Exception(start_response)
 
-        print("✅ Facebook Uploaded:", result.get("id"))
+    video_id = start_response["video_id"]
+    upload_url = start_response["upload_url"]
 
-    except Exception as e:
-        print("❌ Facebook Upload Failed:", str(e))
+    print("📤 Upload session started:", video_id)
+
+    # STEP 2 — TRANSFER
+    with open(file_path, "rb") as f:
+        transfer_response = requests.post(
+            upload_url,
+            headers={
+                "Authorization": f"OAuth {FACEBOOK_PAGE_ACCESS_TOKEN}",
+                "offset": "0"
+            },
+            data=f
+        ).json()
+
+    if "error" in transfer_response:
+        raise Exception(transfer_response)
+
+    print("📦 Video transferred")
+
+    # STEP 3 — FINISH
+    finish_response = requests.post(
+        start_url,
+        data={
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "description": description,
+            "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
+        }
+    ).json()
+
+    if "error" in finish_response:
+        raise Exception(finish_response)
+
+    print("✅ Facebook Reel Uploaded:", video_id)
+
+except Exception as e:
+    print("❌ Facebook Upload Failed:", e)
 
     drive_service.files().update(
         fileId=video["id"],
