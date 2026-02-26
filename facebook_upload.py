@@ -18,7 +18,7 @@ UPLOADED_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID"]
 FACEBOOK_PAGE_ID = os.environ["FACEBOOK_PAGE_ID"]
 FACEBOOK_PAGE_ACCESS_TOKEN = os.environ["FACEBOOK_PAGE_ACCESS_TOKEN"]
 
-VIDEOS_PER_RUN = int(os.environ.get("VIDEOS_PER_RUN", 1))
+VIDEOS_PER_RUN = int(os.environ.get("VIDEOS_PER_RUN", 4))
 
 # ==============================
 # GOOGLE DRIVE AUTH
@@ -52,14 +52,16 @@ if not files:
 videos_to_process = files[:VIDEOS_PER_RUN]
 
 # ==============================
-# PROCESS
+# PROCESS VIDEOS
 # ==============================
 
 for video in videos_to_process:
 
     print("\nProcessing:", video["name"])
 
+    # ------------------------------
     # Download from Drive
+    # ------------------------------
     request = drive_service.files().get_media(fileId=video["id"])
     fh = io.FileIO(video["name"], "wb")
     downloader = MediaIoBaseDownload(fh, request)
@@ -68,39 +70,69 @@ for video in videos_to_process:
     while not done:
         status, done = downloader.next_chunk()
 
-    title = "Daily Krishna Wisdom 🙏"
-    description = "#krishna #bhakti #sanatandharma"
-
-    # ==============================
-    # UPLOAD TO FACEBOOK REEL
-    # ==============================
-
     try:
-        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
+        # ==============================
+        # PHASE 1 — START UPLOAD
+        # ==============================
 
-        with open(video["name"], "rb") as video_file:
-            files_data = {
-                "source": video_file
+        start_url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
+
+        start_response = requests.post(
+            start_url,
+            data={
+                "upload_phase": "start",
+                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
             }
+        )
 
-            data = {
-                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN,
-                "description": description
-            }
+        start_result = start_response.json()
 
-            response = requests.post(
-                url,
-                files=files_data,
-                data=data,
-                timeout=300
+        if "error" in start_result:
+            raise Exception(start_result)
+
+        video_id = start_result["video_id"]
+        upload_url = start_result["upload_url"]
+
+        print("Upload session started:", video_id)
+
+        # ==============================
+        # PHASE 2 — TRANSFER VIDEO
+        # ==============================
+
+        with open(video["name"], "rb") as f:
+            transfer_response = requests.post(
+                upload_url,
+                headers={
+                    "Authorization": f"OAuth {FACEBOOK_PAGE_ACCESS_TOKEN}"
+                },
+                data=f
             )
 
-        result = response.json()
+        if transfer_response.status_code != 200:
+            raise Exception(transfer_response.text)
 
-        if "error" in result:
-            raise Exception(result)
+        print("Video transferred successfully")
 
-        print("✅ Uploaded as Facebook Reel:", result.get("id"))
+        # ==============================
+        # PHASE 3 — FINISH & PUBLISH
+        # ==============================
+
+        finish_response = requests.post(
+            f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels",
+            data={
+                "upload_phase": "finish",
+                "video_id": video_id,
+                "description": "#krishna #bhakti #sanatandharma",
+                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
+            }
+        )
+
+        finish_result = finish_response.json()
+
+        if "error" in finish_result:
+            raise Exception(finish_result)
+
+        print("✅ Uploaded as Facebook Reel:", video_id)
 
     except Exception as e:
         print("❌ Facebook Reel Upload Failed:", str(e))
