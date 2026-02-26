@@ -71,34 +71,37 @@ for video in videos_to_process:
     description = "#krishna #bhakti #sanatandharma"
 
     try:
-        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/videos"
+    url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
 
-        with open(video["name"], "rb") as video_file:
-            files_data = {"source": video_file}
-            data = {
-                "title": title,
-                "description": description,
-                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
-            }
+    with open(video["name"], "rb") as video_file:
+        files_data = {
+            "source": video_file
+        }
 
-            response = requests.post(
-                url,
-                files=files_data,
-                data=data,
-                timeout=300
-            )
+        data = {
+            "upload_phase": "finish",
+            "access_token": FACEBOOK_PAGE_ACCESS_TOKEN,
+            "description": "#krishna #bhakti #sanatandharma"
+        }
 
-        result = response.json()
+        response = requests.post(
+            url,
+            files=files_data,
+            data=data,
+            timeout=300
+        )
 
-        if "error" in result:
-            raise Exception(result)
+    result = response.json()
 
-        print("✅ Uploaded to Facebook:", result.get("id"))
+    if "error" in result:
+        raise Exception(result)
 
-    except Exception as e:
-        print("❌ Facebook Upload Failed:", str(e))
-        os.remove(video["name"])
-        continue
+    print("✅ Uploaded as Facebook Reel:", result.get("id"))
+
+except Exception as e:
+    print("❌ Facebook Reel Upload Failed:", str(e))
+    os.remove(video["name"])
+    continue
 
     drive_service.files().update(
         fileId=video["id"],
