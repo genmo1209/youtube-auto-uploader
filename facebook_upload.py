@@ -18,7 +18,7 @@ UPLOADED_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID"]
 FACEBOOK_PAGE_ID = os.environ["FACEBOOK_PAGE_ID"]
 FACEBOOK_PAGE_ACCESS_TOKEN = os.environ["FACEBOOK_PAGE_ACCESS_TOKEN"]
 
-VIDEOS_PER_RUN = int(os.environ.get("VIDEOS_PER_RUN", 4))
+VIDEOS_PER_RUN = int(os.environ.get("VIDEOS_PER_RUN", 1))
 
 # ==============================
 # GOOGLE DRIVE AUTH
@@ -57,8 +57,9 @@ videos_to_process = files[:VIDEOS_PER_RUN]
 
 for video in videos_to_process:
 
-    print("Processing:", video["name"])
+    print("\nProcessing:", video["name"])
 
+    # Download from Drive
     request = drive_service.files().get_media(fileId=video["id"])
     fh = io.FileIO(video["name"], "wb")
     downloader = MediaIoBaseDownload(fh, request)
@@ -70,38 +71,45 @@ for video in videos_to_process:
     title = "Daily Krishna Wisdom 🙏"
     description = "#krishna #bhakti #sanatandharma"
 
+    # ==============================
+    # UPLOAD TO FACEBOOK REEL
+    # ==============================
+
     try:
-    url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
+        url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
 
-    with open(video["name"], "rb") as video_file:
-        files_data = {
-            "source": video_file
-        }
+        with open(video["name"], "rb") as video_file:
+            files_data = {
+                "source": video_file
+            }
 
-        data = {
-            "upload_phase": "finish",
-            "access_token": FACEBOOK_PAGE_ACCESS_TOKEN,
-            "description": "#krishna #bhakti #sanatandharma"
-        }
+            data = {
+                "access_token": FACEBOOK_PAGE_ACCESS_TOKEN,
+                "description": description
+            }
 
-        response = requests.post(
-            url,
-            files=files_data,
-            data=data,
-            timeout=300
-        )
+            response = requests.post(
+                url,
+                files=files_data,
+                data=data,
+                timeout=300
+            )
 
-    result = response.json()
+        result = response.json()
 
-    if "error" in result:
-        raise Exception(result)
+        if "error" in result:
+            raise Exception(result)
 
-    print("✅ Uploaded as Facebook Reel:", result.get("id"))
+        print("✅ Uploaded as Facebook Reel:", result.get("id"))
 
-except Exception as e:
-    print("❌ Facebook Reel Upload Failed:", str(e))
-    os.remove(video["name"])
-    continue
+    except Exception as e:
+        print("❌ Facebook Reel Upload Failed:", str(e))
+        os.remove(video["name"])
+        continue
+
+    # ==============================
+    # MOVE FILE TO UPLOADED FOLDER
+    # ==============================
 
     drive_service.files().update(
         fileId=video["id"],
@@ -112,4 +120,4 @@ except Exception as e:
     os.remove(video["name"])
     time.sleep(10)
 
-print("🎉 Facebook Upload Complete")
+print("\n🎉 Facebook Reel Upload Complete")
