@@ -52,16 +52,14 @@ if not files:
 videos_to_process = files[:VIDEOS_PER_RUN]
 
 # ==============================
-# PROCESS VIDEOS
+# PROCESS
 # ==============================
 
 for video in videos_to_process:
 
     print("\nProcessing:", video["name"])
 
-    # ------------------------------
     # Download from Drive
-    # ------------------------------
     request = drive_service.files().get_media(fileId=video["id"])
     fh = io.FileIO(video["name"], "wb")
     downloader = MediaIoBaseDownload(fh, request)
@@ -72,13 +70,11 @@ for video in videos_to_process:
 
     try:
         # ==============================
-        # PHASE 1 — START UPLOAD
+        # PHASE 1 — START
         # ==============================
 
-        start_url = f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels"
-
         start_response = requests.post(
-            start_url,
+            f"https://graph.facebook.com/v24.0/{FACEBOOK_PAGE_ID}/video_reels",
             data={
                 "upload_phase": "start",
                 "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
@@ -96,25 +92,31 @@ for video in videos_to_process:
         print("Upload session started:", video_id)
 
         # ==============================
-        # PHASE 2 — TRANSFER VIDEO
+        # PHASE 2 — TRANSFER
         # ==============================
+
+        file_size = os.path.getsize(video["name"])
 
         with open(video["name"], "rb") as f:
             transfer_response = requests.post(
                 upload_url,
                 headers={
-                    "Authorization": f"OAuth {FACEBOOK_PAGE_ACCESS_TOKEN}"
+                    "Authorization": f"OAuth {FACEBOOK_PAGE_ACCESS_TOKEN}",
+                    "offset": "0",
+                    "file_size": str(file_size)
                 },
                 data=f
             )
 
-        if transfer_response.status_code != 200:
-            raise Exception(transfer_response.text)
+        transfer_result = transfer_response.json()
+
+        if "error" in transfer_result:
+            raise Exception(transfer_result)
 
         print("Video transferred successfully")
 
         # ==============================
-        # PHASE 3 — FINISH & PUBLISH
+        # PHASE 3 — FINISH
         # ==============================
 
         finish_response = requests.post(
@@ -139,10 +141,7 @@ for video in videos_to_process:
         os.remove(video["name"])
         continue
 
-    # ==============================
-    # MOVE FILE TO UPLOADED FOLDER
-    # ==============================
-
+    # Move file after success
     drive_service.files().update(
         fileId=video["id"],
         addParents=UPLOADED_FOLDER_ID,
