@@ -27,17 +27,19 @@ GRAPH_URL = "https://graph.facebook.com/v24.0"
 # HELPERS
 # ==============================
 
-def sanitize_filename(name: str):
-    """Remove spaces & special chars (Facebook safe)"""
+def sanitize_filename(name):
+    """Make filename Facebook safe"""
     safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", name)
     if safe != name:
         os.rename(name, safe)
     return safe
 
 
-def check_video_status(video_id):
-    """Wait until Facebook processes video"""
-    for _ in range(12):  # ~2 minutes max
+def wait_for_processing(video_id):
+    """Wait until reel is processed"""
+    print("⏳ Waiting for Facebook processing...")
+
+    for _ in range(18):  # ~3 minutes
         r = requests.get(
             f"{GRAPH_URL}/{video_id}",
             params={
@@ -47,22 +49,21 @@ def check_video_status(video_id):
         )
 
         data = r.json()
-        print("Processing status:", data)
+        print("STATUS:", data)
 
         if "status" in data:
             state = data["status"].get("video_status")
 
             if state == "ready":
-                print("✅ Video ready on Facebook")
+                print("✅ Reel is LIVE")
                 return True
 
             if state == "error":
-                print("❌ Facebook processing error")
-                return False
+                raise Exception("Facebook processing failed")
 
         time.sleep(10)
 
-    print("⚠️ Processing timeout (still may publish later)")
+    print("⚠️ Processing timeout (may still publish)")
     return True
 
 
@@ -143,7 +144,7 @@ for video in videos_to_process:
         video_id = start_result["video_id"]
         upload_url = start_result["upload_url"]
 
-        print("Upload session started:", video_id)
+        print("✅ Upload session started:", video_id)
 
         # ==============================
         # PHASE 2 — TRANSFER
@@ -163,8 +164,9 @@ for video in videos_to_process:
                 timeout=600
             )
 
+        print("TRANSFER RESPONSE:", transfer_response.text)
+
         transfer_result = transfer_response.json()
-        print("TRANSFER RESPONSE:", transfer_result)
 
         if "error" in transfer_result:
             raise Exception(transfer_result)
@@ -172,7 +174,7 @@ for video in videos_to_process:
         print("✅ Video transferred")
 
         # ==============================
-        # PHASE 3 — FINISH
+        # PHASE 3 — FINISH + PUBLISH
         # ==============================
 
         finish_response = requests.post(
@@ -180,14 +182,21 @@ for video in videos_to_process:
             data={
                 "upload_phase": "finish",
                 "video_id": video_id,
+
+                # ⭐ REQUIRED FOR VISIBILITY + INSTAGRAM SHARE
+                "video_state": "PUBLISHED",
+                "published": "true",
+
                 "description": "#krishna #bhakti #sanatandharma",
+
                 "access_token": FACEBOOK_PAGE_ACCESS_TOKEN
             },
             timeout=60
         )
 
+        print("FINISH RESPONSE:", finish_response.text)
+
         finish_result = finish_response.json()
-        print("FINISH RESPONSE:", finish_result)
 
         if "error" in finish_result:
             raise Exception(finish_result)
@@ -195,11 +204,10 @@ for video in videos_to_process:
         print("✅ Reel submitted:", video_id)
 
         # ==============================
-        # WAIT FOR FACEBOOK PROCESSING
+        # WAIT FOR PROCESSING
         # ==============================
 
-        if not check_video_status(video_id):
-            raise Exception("Facebook processing failed")
+        wait_for_processing(video_id)
 
     except Exception as e:
         print("❌ Upload Failed:", e)
@@ -218,7 +226,7 @@ for video in videos_to_process:
 
     os.remove(local_name)
 
-    print("✅ Moved file to uploaded folder")
+    print("✅ File moved to uploaded folder")
     time.sleep(15)
 
 print("\n🎉 Facebook Reel Upload Complete")
