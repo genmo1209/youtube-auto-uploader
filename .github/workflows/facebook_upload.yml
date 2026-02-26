@@ -1,0 +1,38 @@
+name: Facebook Auto Upload
+
+on:
+  schedule:
+    - cron: "30 11 * * *"   # 5:00 PM IST
+  workflow_dispatch:
+
+jobs:
+  facebook_upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      # Setup Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Run Facebook Script
+      - name: Run Facebook Upload
+        run: python facebook_upload.py
+        env:
+          FOLDER_ID: ${{ secrets.FOLDER_ID }}
+          UPLOADED_FOLDER_ID: ${{ secrets.UPLOADED_FOLDER_ID }}
+          SERVICE_ACCOUNT_JSON: ${{ secrets.SERVICE_ACCOUNT_JSON }}
+          FACEBOOK_PAGE_ID: ${{ secrets.FACEBOOK_PAGE_ID }}
+          FACEBOOK_PAGE_ACCESS_TOKEN: ${{ secrets.FACEBOOK_PAGE_ACCESS_TOKEN }}
+          VIDEOS_PER_RUN: 4
