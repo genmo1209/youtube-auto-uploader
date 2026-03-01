@@ -83,7 +83,7 @@ drive_creds = service_account.Credentials.from_service_account_info(
 drive_service = build("drive", "v3", credentials=drive_creds)
 
 # ==============================
-# FETCH VIDEOS FROM DRIVE
+# FETCH VIDEOS
 # ==============================
 
 results = drive_service.files().list(
@@ -133,10 +133,10 @@ for video in videos_to_process:
     try:
         title, hashtags = generate_trending_caption()
 
-        print("📤 Step 1: Uploading video (unpublished)...")
+        print("📤 Uploading TRUE draft video...")
 
         # ==============================
-        # STEP 1 — Upload Video
+        # UPLOAD AS TRUE DRAFT
         # ==============================
 
         with open(local_name, "rb") as video_file:
@@ -146,45 +146,21 @@ for video in videos_to_process:
                     "source": video_file
                 },
                 data={
+                    "description": f"{title}\n\n{hashtags}",
                     "published": "false",
+                    "unpublished_content_type": "DRAFT",
                     "access_token": FB_PAGE_TOKEN
                 },
                 timeout=600
             )
 
         upload_result = upload_response.json()
-        print("VIDEO UPLOAD RESPONSE:", upload_result)
+        print("UPLOAD RESPONSE:", upload_result)
 
         if "error" in upload_result:
             raise Exception(upload_result)
 
-        video_id = upload_result.get("id")
-        print("✅ Video uploaded:", video_id)
-
-        # ==============================
-        # STEP 2 — Create Draft Feed Post
-        # ==============================
-
-        print("📤 Step 2: Creating draft feed post...")
-
-        feed_response = requests.post(
-            f"{GRAPH_URL}/{FB_PAGE_ID}/feed",
-            data={
-                "message": f"{title}\n\n{hashtags}",
-                "attached_media[0]": json.dumps({"media_fbid": video_id}),
-                "published": "false",
-                "access_token": FB_PAGE_TOKEN
-            },
-            timeout=60
-        )
-
-        feed_result = feed_response.json()
-        print("FEED RESPONSE:", feed_result)
-
-        if "error" in feed_result:
-            raise Exception(feed_result)
-
-        print("✅ Draft post created successfully!")
+        print("✅ TRUE Draft Created:", upload_result.get("id"))
 
     except Exception as e:
         print("❌ Upload Failed:", e)
