@@ -1,154 +1,230 @@
 import os
+import io
 import json
+import time
 import requests
-import tempfile
+import re
 import random
+
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+from pytrends.request import TrendReq
 
-# -------------------------------
-# CONFIGURATION
-# -------------------------------
-FB_PAGE_ID = os.getenv("FB_PAGE_ID")
-FB_PAGE_TOKEN = os.getenv("FB_PAGE_TOKEN")
-SOURCE_FOLDER_ID = os.getenv("UPLOADED_FOLDER_ID_CH3")  # Drive source folder
-DEST_FOLDER_ID = os.getenv("Uploaded_FB_Pyscho")        # Drive uploaded folder
-LOG_FILE = "Uploaded_FB_Pyscho.json"
-SERVICE_ACCOUNT_JSON_CONTENT = os.getenv("SERVICE_ACCOUNT_JSON")
+# ==============================
+# ENV VARIABLES (YOUR SECRET NAMES)
+# ==============================
 
-# -------------------------------
-# HOOK GENERATOR BASE
-# -------------------------------
-PSYCHO_TOPICS = [
-    "lying", "attraction", "fear", "confidence", "procrastination",
-    "overthinking", "body language", "memory", "trauma",
-    "happiness", "subconscious mind", "decision making"
-]
+SOURCE_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID_CH3"]
+DEST_FOLDER_ID = os.environ["UPLOADED_FB_PYSCHO"]
+
+FB_PAGE_ID = os.environ["FB_PAGE_ID"]
+FB_PAGE_TOKEN = os.environ["FB_PAGE_TOKEN"]
+
+SERVICE_ACCOUNT_JSON = os.environ["SERVICE_ACCOUNT_JSON"]
+
+VIDEOS_PER_RUN = int(os.environ.get("VIDEOS_PER_RUN", 1))
+
+GRAPH_URL = "https://graph.facebook.com/v24.0"
+
+# ==============================
+# TRENDING HOOK + HASHTAG SYSTEM
+# ==============================
 
 HOOK_TEMPLATES = [
-    "Your brain does THIS when it comes to {topic} 😳",
     "The hidden psychology behind {topic} 🤯",
-    "Why you secretly struggle with {topic} 😶",
-    "The science of {topic} explained in 30 seconds 🧠",
-    "This truth about {topic} will shock you 😱",
-    "What nobody tells you about {topic} 👀",
+    "Nobody talks about this truth about {topic} 😳",
+    "Why your brain reacts like this to {topic} 🧠",
+    "The science of {topic} explained in 20 seconds",
+    "This is why {topic} controls your life 😱",
 ]
 
-HASHTAGS_POOL = [
-    "#Psychology", "#MindHacks", "#BrainFacts", "#MentalHealth",
-    "#SelfImprovement", "#HumanBehavior", "#Neuroscience",
-    "#DailyPsychology", "#Mindset", "#Confidence",
-    "#Overthinking", "#LifeHacks", "#Reels", "#ViralReels",
-    "#InstagramReels", "#FacebookReels"
+BASE_HASHTAGS = [
+    "#Psychology", "#Mindset", "#SelfGrowth",
+    "#MentalHealth", "#HumanBehavior",
+    "#DailyWisdom", "#ReelsIndia", "#ViralReels"
 ]
 
-# -------------------------------
-# Generate Title + Hashtags
-# -------------------------------
-def generate_caption():
-    topic = random.choice(PSYCHO_TOPICS)
-    template = random.choice(HOOK_TEMPLATES)
-    title = template.format(topic=topic)
+def generate_trending_caption():
+    try:
+        pytrends = TrendReq()
+        trends = pytrends.trending_searches(pn='india')[0].tolist()
 
-    hashtags = " ".join(random.sample(HASHTAGS_POOL, 8))
+        topic = random.choice(trends[:20])
+        hook = random.choice(HOOK_TEMPLATES).format(topic=topic)
 
-    return title, hashtags
+        trending_tags = [
+            f"#{t.replace(' ', '')}" for t in random.sample(trends[:20], 5)
+        ]
 
-# -------------------------------
-# Write Service Account JSON
-# -------------------------------
-with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as temp_file:
-    temp_file.write(SERVICE_ACCOUNT_JSON_CONTENT.encode())
-    SERVICE_ACCOUNT_JSON_PATH = temp_file.name
+        base_tags = random.sample(BASE_HASHTAGS, 4)
 
-# -------------------------------
-# Authenticate Drive
-# -------------------------------
-SCOPES = ["https://www.googleapis.com/auth/drive"]
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_JSON_PATH, scopes=SCOPES
+        hashtags = " ".join(trending_tags + base_tags)
+
+        return hook, hashtags
+
+    except:
+        topic = "overthinking"
+        hook = random.choice(HOOK_TEMPLATES).format(topic=topic)
+        hashtags = " ".join(random.sample(BASE_HASHTAGS, 5))
+        return hook, hashtags
+
+# ==============================
+# GOOGLE DRIVE AUTH
+# ==============================
+
+service_account_info = json.loads(SERVICE_ACCOUNT_JSON)
+
+drive_creds = service_account.Credentials.from_service_account_info(
+    service_account_info,
+    scopes=["https://www.googleapis.com/auth/drive"]
 )
-drive_service = build('drive', 'v3', credentials=credentials)
 
-# -------------------------------
-# Load Uploaded Log
-# -------------------------------
-if os.path.exists(LOG_FILE):
-    with open(LOG_FILE, "r") as f:
-        uploaded_videos = json.load(f)
-else:
-    uploaded_videos = []
+drive_service = build("drive", "v3", credentials=drive_creds)
 
-# -------------------------------
-# Get Files From Drive
-# -------------------------------
+# ==============================
+# FETCH VIDEOS FROM SOURCE FOLDER
+# ==============================
+
 results = drive_service.files().list(
-    q=f"'{SOURCE_FOLDER_ID}' in parents and trashed=false",
+    q=f"'{SOURCE_FOLDER_ID}' in parents and mimeType contains 'video/'",
+    orderBy="createdTime asc",
     fields="files(id, name)"
 ).execute()
 
 files = results.get("files", [])
 
 if not files:
-    print("No files found.")
+    print("No videos found.")
     exit()
 
-# -------------------------------
-# Move File After Upload
-# -------------------------------
-def move_file(file_id):
-    file = drive_service.files().get(fileId=file_id, fields='parents').execute()
-    previous_parents = ",".join(file.get('parents', []))
-    drive_service.files().update(
-        fileId=file_id,
-        addParents=DEST_FOLDER_ID,
-        removeParents=previous_parents
-    ).execute()
+videos_to_process = files[:VIDEOS_PER_RUN]
 
-# -------------------------------
-# Upload Only ONE Video as Draft
-# -------------------------------
-uploaded_this_run = False
+# ==============================
+# PROCESS VIDEOS
+# ==============================
 
-for file in files:
+for video in videos_to_process:
 
-    if uploaded_this_run:
-        break
+    print("\n🎬 Processing:", video["name"])
 
-    if file["id"] in uploaded_videos:
+    local_name = re.sub(r"[^a-zA-Z0-9_.-]", "_", video["name"])
+
+    # --------------------------
+    # DOWNLOAD FROM DRIVE
+    # --------------------------
+    request = drive_service.files().get_media(fileId=video["id"])
+    fh = io.FileIO(local_name, "wb")
+    downloader = MediaIoBaseDownload(fh, request)
+
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+
+    fh.close()
+
+    try:
+        # ==============================
+        # PHASE 1 — START
+        # ==============================
+
+        start_response = requests.post(
+            f"{GRAPH_URL}/{FB_PAGE_ID}/video_reels",
+            data={
+                "upload_phase": "start",
+                "access_token": FB_PAGE_TOKEN
+            },
+            timeout=60
+        )
+
+        start_result = start_response.json()
+        print("START RESPONSE:", start_result)
+
+        if "error" in start_result:
+            raise Exception(start_result)
+
+        video_id = start_result["video_id"]
+        upload_url = start_result["upload_url"]
+
+        print("✅ Upload session started:", video_id)
+
+        # ==============================
+        # PHASE 2 — TRANSFER
+        # ==============================
+
+        file_size = os.path.getsize(local_name)
+
+        with open(local_name, "rb") as f:
+            transfer_response = requests.post(
+                upload_url,
+                headers={
+                    "Authorization": f"OAuth {FB_PAGE_TOKEN}",
+                    "offset": "0",
+                    "file_size": str(file_size),
+                },
+                data=f,
+                timeout=600
+            )
+
+        print("TRANSFER RESPONSE:", transfer_response.text)
+
+        transfer_result = transfer_response.json()
+
+        if "error" in transfer_result:
+            raise Exception(transfer_result)
+
+        print("✅ Video transferred")
+
+        # ==============================
+        # PHASE 3 — FINISH (SAVE AS DRAFT)
+        # ==============================
+
+        title, hashtags = generate_trending_caption()
+
+        finish_response = requests.post(
+            f"{GRAPH_URL}/{FB_PAGE_ID}/video_reels",
+            data={
+                "upload_phase": "finish",
+                "video_id": video_id,
+
+                # 🔥 SAVE AS DRAFT
+                "video_state": "DRAFT",
+                "published": "false",
+
+                "description": f"{title}\n\n{hashtags}",
+
+                "access_token": FB_PAGE_TOKEN
+            },
+            timeout=60
+        )
+
+        print("FINISH RESPONSE:", finish_response.text)
+
+        finish_result = finish_response.json()
+
+        if "error" in finish_result:
+            raise Exception(finish_result)
+
+        print("✅ Reel saved as DRAFT:", video_id)
+
+    except Exception as e:
+        print("❌ Upload Failed:", e)
+        os.remove(local_name)
         continue
 
-    print(f"Uploading: {file['name']}")
+    # ==============================
+    # MOVE FILE TO UPLOADED_FB_PYSCHO
+    # ==============================
 
-    download_url = f"https://www.googleapis.com/drive/v3/files/{file['id']}?alt=media"
+    drive_service.files().update(
+        fileId=video["id"],
+        addParents=DEST_FOLDER_ID,
+        removeParents=SOURCE_FOLDER_ID
+    ).execute()
 
-    title, hashtags = generate_caption()
+    os.remove(local_name)
 
-    upload_url = f"https://graph.facebook.com/v25.0/{FB_PAGE_ID}/videos"
+    print("✅ File moved to UPLOADED_FB_PYSCHO")
+    time.sleep(10)
 
-    payload = {
-        "title": title,
-        "description": f"{title}\n\n{hashtags}",
-        "file_url": download_url,
-        "published": "false",  # IMPORTANT: Draft mode
-        "access_token": FB_PAGE_TOKEN
-    }
-
-    response = requests.post(upload_url, data=payload)
-    result = response.json()
-
-    if "id" in result:
-        print("Uploaded as draft successfully.")
-        uploaded_videos.append(file["id"])
-        move_file(file["id"])
-        uploaded_this_run = True
-    else:
-        print("Upload failed:", result)
-
-# -------------------------------
-# Save Log
-# -------------------------------
-with open(LOG_FILE, "w") as f:
-    json.dump(uploaded_videos, f, indent=2)
-
-print("Done. Only 1 draft uploaded.")
+print("\n🎉 Draft Reel Upload Complete")
