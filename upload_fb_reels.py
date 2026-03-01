@@ -28,7 +28,7 @@ VIDEOS_PER_RUN = int(os.environ.get("VIDEOS_PER_RUN", 1))
 GRAPH_URL = "https://graph.facebook.com/v24.0"
 
 # ==============================
-# TRENDING HOOK + HASHTAG SYSTEM
+# TRENDING CAPTION SYSTEM
 # ==============================
 
 HOOK_TEMPLATES = [
@@ -83,7 +83,7 @@ drive_creds = service_account.Credentials.from_service_account_info(
 drive_service = build("drive", "v3", credentials=drive_creds)
 
 # ==============================
-# FETCH VIDEOS
+# FETCH VIDEOS FROM DRIVE
 # ==============================
 
 results = drive_service.files().list(
@@ -115,6 +115,7 @@ for video in videos_to_process:
     # --------------------------
     # DOWNLOAD FROM DRIVE
     # --------------------------
+
     request = drive_service.files().get_media(
         fileId=video["id"],
         supportsAllDrives=True
@@ -130,86 +131,60 @@ for video in videos_to_process:
     fh.close()
 
     try:
-        # ==============================
-        # PHASE 1 — START
-        # ==============================
+        title, hashtags = generate_trending_caption()
 
-        start_response = requests.post(
-            f"{GRAPH_URL}/{FB_PAGE_ID}/video_reels",
-            data={
-                "upload_phase": "start",
-                "access_token": FB_PAGE_TOKEN
-            },
-            timeout=60
-        )
-
-        start_result = start_response.json()
-        print("START RESPONSE:", start_result)
-
-        if "error" in start_result:
-            raise Exception(start_result)
-
-        video_id = start_result["video_id"]
-        upload_url = start_result["upload_url"]
-
-        print("✅ Upload session started:", video_id)
+        print("📤 Step 1: Uploading video (unpublished)...")
 
         # ==============================
-        # PHASE 2 — TRANSFER
+        # STEP 1 — Upload Video
         # ==============================
 
-        file_size = os.path.getsize(local_name)
-
-        with open(local_name, "rb") as f:
-            transfer_response = requests.post(
-                upload_url,
-                headers={
-                    "Authorization": f"OAuth {FB_PAGE_TOKEN}",
-                    "offset": "0",
-                    "file_size": str(file_size),
+        with open(local_name, "rb") as video_file:
+            upload_response = requests.post(
+                f"{GRAPH_URL}/{FB_PAGE_ID}/videos",
+                files={
+                    "source": video_file
                 },
-                data=f,
+                data={
+                    "published": "false",
+                    "access_token": FB_PAGE_TOKEN
+                },
                 timeout=600
             )
 
-        print("TRANSFER RESPONSE:", transfer_response.text)
+        upload_result = upload_response.json()
+        print("VIDEO UPLOAD RESPONSE:", upload_result)
 
-        transfer_result = transfer_response.json()
+        if "error" in upload_result:
+            raise Exception(upload_result)
 
-        if "error" in transfer_result:
-            raise Exception(transfer_result)
-
-        print("✅ Video transferred")
+        video_id = upload_result.get("id")
+        print("✅ Video uploaded:", video_id)
 
         # ==============================
-        # PHASE 3 — FINISH (UNPUBLISHED)
+        # STEP 2 — Create Draft Feed Post
         # ==============================
 
-        title, hashtags = generate_trending_caption()
+        print("📤 Step 2: Creating draft feed post...")
 
-        finish_response = requests.post(
-            f"{GRAPH_URL}/{FB_PAGE_ID}/video_reels",
+        feed_response = requests.post(
+            f"{GRAPH_URL}/{FB_PAGE_ID}/feed",
             data={
-                "upload_phase": "finish",
-                "video_id": video_id,
-
-                # ✅ Visible in Business Suite & Mobile
+                "message": f"{title}\n\n{hashtags}",
+                "attached_media[0]": json.dumps({"media_fbid": video_id}),
                 "published": "false",
-
-                "description": f"{title}\n\n{hashtags}",
                 "access_token": FB_PAGE_TOKEN
             },
             timeout=60
         )
 
-        print("FINISH RESPONSE:", finish_response.text)
+        feed_result = feed_response.json()
+        print("FEED RESPONSE:", feed_result)
 
-        finish_result = finish_response.json()
+        if "error" in feed_result:
+            raise Exception(feed_result)
 
-        if "error" in finish_result:
-            raise Exception(finish_result)
-
-        print("✅ Reel uploaded as UNPUBLISHED:", video_id)
+        print("✅ Draft post created successfully!")
 
     except Exception as e:
         print("❌ Upload Failed:", e)
@@ -217,7 +192,7 @@ for video in videos_to_process:
         continue
 
     # ==============================
-    # MOVE FILE TO UPLOADED_FB_PYSCHO
+    # MOVE FILE AFTER SUCCESS
     # ==============================
 
     drive_service.files().update(
@@ -232,4 +207,4 @@ for video in videos_to_process:
     print("✅ File moved to UPLOADED_FB_PYSCHO")
     time.sleep(10)
 
-print("\n🎉 Reel Upload Complete (Ready for Manual Publish)")
+print("\n🎉 Upload Complete — Ready For Manual Publish In Mobile Drafts")
