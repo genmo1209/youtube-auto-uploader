@@ -12,7 +12,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from pytrends.request import TrendReq
 
 # ==============================
-# ENV VARIABLES (YOUR SECRET NAMES)
+# ENV VARIABLES
 # ==============================
 
 SOURCE_FOLDER_ID = os.environ["UPLOADED_FOLDER_ID_CH3"]
@@ -83,13 +83,15 @@ drive_creds = service_account.Credentials.from_service_account_info(
 drive_service = build("drive", "v3", credentials=drive_creds)
 
 # ==============================
-# FETCH VIDEOS FROM SOURCE FOLDER
+# FETCH VIDEOS
 # ==============================
 
 results = drive_service.files().list(
     q=f"'{SOURCE_FOLDER_ID}' in parents and mimeType contains 'video/'",
     orderBy="createdTime asc",
-    fields="files(id, name)"
+    fields="files(id, name)",
+    supportsAllDrives=True,
+    includeItemsFromAllDrives=True
 ).execute()
 
 files = results.get("files", [])
@@ -113,7 +115,11 @@ for video in videos_to_process:
     # --------------------------
     # DOWNLOAD FROM DRIVE
     # --------------------------
-    request = drive_service.files().get_media(fileId=video["id"])
+    request = drive_service.files().get_media(
+        fileId=video["id"],
+        supportsAllDrives=True
+    )
+
     fh = io.FileIO(local_name, "wb")
     downloader = MediaIoBaseDownload(fh, request)
 
@@ -176,7 +182,7 @@ for video in videos_to_process:
         print("✅ Video transferred")
 
         # ==============================
-        # PHASE 3 — FINISH (SAVE AS DRAFT)
+        # PHASE 3 — FINISH (UNPUBLISHED)
         # ==============================
 
         title, hashtags = generate_trending_caption()
@@ -187,12 +193,10 @@ for video in videos_to_process:
                 "upload_phase": "finish",
                 "video_id": video_id,
 
-                # 🔥 SAVE AS DRAFT
-                "video_state": "DRAFT",
+                # ✅ Visible in Business Suite & Mobile
                 "published": "false",
 
                 "description": f"{title}\n\n{hashtags}",
-
                 "access_token": FB_PAGE_TOKEN
             },
             timeout=60
@@ -205,7 +209,7 @@ for video in videos_to_process:
         if "error" in finish_result:
             raise Exception(finish_result)
 
-        print("✅ Reel saved as DRAFT:", video_id)
+        print("✅ Reel uploaded as UNPUBLISHED:", video_id)
 
     except Exception as e:
         print("❌ Upload Failed:", e)
@@ -219,7 +223,8 @@ for video in videos_to_process:
     drive_service.files().update(
         fileId=video["id"],
         addParents=DEST_FOLDER_ID,
-        removeParents=SOURCE_FOLDER_ID
+        removeParents=SOURCE_FOLDER_ID,
+        supportsAllDrives=True
     ).execute()
 
     os.remove(local_name)
@@ -227,4 +232,4 @@ for video in videos_to_process:
     print("✅ File moved to UPLOADED_FB_PYSCHO")
     time.sleep(10)
 
-print("\n🎉 Draft Reel Upload Complete")
+print("\n🎉 Reel Upload Complete (Ready for Manual Publish)")
