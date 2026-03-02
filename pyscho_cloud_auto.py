@@ -123,19 +123,29 @@ def move_asset(public_id, folder):
 # FACEBOOK POST (DRAFT)
 # ==============================
 
+
 def post_facebook(video_url, caption):
-    res = requests.post(
-        f"{GRAPH_URL}/{FB_PAGE_ID}/videos",
+    print("Uploading Facebook Reel...")
+
+    response = requests.post(
+        f"{GRAPH_URL}/{FB_PAGE_ID}/video_reels",
         data={
-            "file_url": video_url,
+            "video_url": video_url,
             "description": caption,
-            "published": "true",
+            "published": "true",  # ensure public
             "access_token": ACCESS_TOKEN
         }
-    ).json()
+    )
 
-    print("FB:", res)
-    return "error" not in res
+    res = response.json()
+    print("FB Reel Response:", res)
+
+    if response.status_code != 200 or "error" in res:
+        print("❌ Facebook Reel Upload Failed")
+        return False
+
+    print("✅ Facebook Reel Uploaded Successfully")
+    return True
 
 # ==============================
 # INSTAGRAM POST (WAIT UNTIL READY)
