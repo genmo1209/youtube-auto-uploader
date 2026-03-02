@@ -72,9 +72,8 @@ def get_pending_video():
     response = requests.get(
         url,
         auth=(API_KEY, API_SECRET),
-        params={
+    params={
     "type": "upload",
-    "prefix": "Folder/",
     "max_results": 1
 }
     )
