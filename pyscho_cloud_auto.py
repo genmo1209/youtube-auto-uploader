@@ -9,7 +9,7 @@ from pytrends.request import TrendReq
 # ENV VARIABLES
 # ==============================
 
-ACCESS_TOKEN = os.environ["PYSCHO_ACCESS_TOKEN"]
+ACCESS_TOKEN = os.environ["PYSCHO_ACCESS_TOKEN"]  # PAGE TOKEN
 FB_PAGE_ID = os.environ["PYSCHO_FB_PAGE_ID"]
 IG_BUSINESS_ID = os.environ["PYSCHO_IG_BUSINESS_ID"]
 
@@ -17,7 +17,7 @@ CLOUD_NAME = os.environ["PYSCHO_CLOUDINARY_CLOUD_NAME"]
 API_KEY = os.environ["PYSCHO_CLOUDINARY_API_KEY"]
 API_SECRET = os.environ["PYSCHO_CLOUDINARY_API_SECRET"]
 
-GRAPH_URL = "https://graph.facebook.com/v24.0"
+GRAPH_URL = "https://graph.facebook.com/v25.0"
 
 # ==============================
 # TRENDING CAPTION SYSTEM
@@ -93,10 +93,11 @@ def move_asset(public_id, folder):
     timestamp = int(time.time())
     new_public_id = f"{folder}/{public_id.split('/')[-1]}"
 
+    # alphabetical order required by Cloudinary
     string_to_sign = (
-        f"from_public_id={public_id}"
-        f"&to_public_id={new_public_id}"
-        f"&timestamp={timestamp}"
+        f"from_public_id={public_id}&"
+        f"timestamp={timestamp}&"
+        f"to_public_id={new_public_id}"
     )
 
     signature = hashlib.sha1(
@@ -119,7 +120,7 @@ def move_asset(public_id, folder):
     print("Move Response:", response.json())
 
 # ==============================
-# FACEBOOK REELS (3 STEP UPLOAD)
+# FACEBOOK REELS (FIXED)
 # ==============================
 
 def post_facebook(video_url, caption):
@@ -143,17 +144,30 @@ def post_facebook(video_url, caption):
     upload_url = start_res["upload_url"]
     video_id = start_res["video_id"]
 
-    # STEP 2: TRANSFER
+    # STEP 2: TRANSFER (WITH AUTH HEADER)
     video_binary = requests.get(video_url).content
 
-    transfer_res = requests.post(
-        upload_url,
-        files={"file": video_binary}
-    ).json()
+    for attempt in range(3):
+        try:
+            transfer_res = requests.post(
+                upload_url,
+                headers={
+                    "Authorization": f"OAuth {ACCESS_TOKEN}"
+                },
+                files={
+                    "file": ("video.mp4", video_binary, "video/mp4")
+                }
+            ).json()
 
-    print("Transfer Response:", transfer_res)
+            print("Transfer Response:", transfer_res)
 
-    if "success" not in transfer_res:
+            if transfer_res.get("success"):
+                break
+
+        except Exception as e:
+            print("Retrying transfer...", e)
+            time.sleep(3)
+    else:
         print("❌ Video transfer failed")
         return False
 
@@ -203,7 +217,7 @@ def post_instagram(video_url, caption):
     creation_id = container["id"]
 
     # Wait for processing
-    for _ in range(15):
+    for _ in range(20):
         time.sleep(4)
 
         status = requests.get(
