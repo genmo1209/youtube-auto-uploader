@@ -56,15 +56,14 @@ def generate_trending_caption():
 
         return hook + "\n\n" + " ".join(trend_tags + base_tags)
 
-    except Exception as e:
-        print("Trend error:", e)
+    except Exception:
         return (
             "The hidden psychology behind overthinking 🤯\n\n"
             "#Psychology #Mindset #ReelsIndia"
         )
 
 # ==============================
-# GET VIDEO FROM CLOUDINARY (Assets Root)
+# GET VIDEO FROM CLOUDINARY
 # ==============================
 
 def get_pending_video():
@@ -73,10 +72,7 @@ def get_pending_video():
     response = requests.get(
         url,
         auth=(API_KEY, API_SECRET),
-        params={
-            "type": "upload",
-            "max_results": 1
-        }
+        params={"type": "upload", "max_results": 1}
     )
 
     data = response.json()
@@ -90,7 +86,7 @@ def get_pending_video():
     return video["secure_url"], video["public_id"]
 
 # ==============================
-# MOVE FILE (ROOT → uploaded/failed)
+# MOVE FILE (FIXED SIGNATURE)
 # ==============================
 
 def move_asset(public_id, folder):
@@ -98,11 +94,14 @@ def move_asset(public_id, folder):
     new_public_id = f"{folder}/{public_id.split('/')[-1]}"
 
     string_to_sign = (
-        f"from_public_id={public_id}&to_public_id={new_public_id}"
-        f"&timestamp={timestamp}{API_SECRET}"
+        f"from_public_id={public_id}"
+        f"&to_public_id={new_public_id}"
+        f"&timestamp={timestamp}"
     )
 
-    signature = hashlib.sha1(string_to_sign.encode()).hexdigest()
+    signature = hashlib.sha1(
+        (string_to_sign + API_SECRET).encode()
+    ).hexdigest()
 
     url = f"https://api.cloudinary.com/v1_1/{CLOUD_NAME}/video/rename"
 
@@ -120,38 +119,71 @@ def move_asset(public_id, folder):
     print("Move Response:", response.json())
 
 # ==============================
-# FACEBOOK POST (DRAFT)
+# FACEBOOK REELS (3 STEP UPLOAD)
 # ==============================
-
 
 def post_facebook(video_url, caption):
     print("Uploading Facebook Reel...")
 
-    response = requests.post(
+    # STEP 1: START
+    start_res = requests.post(
         f"{GRAPH_URL}/{FB_PAGE_ID}/video_reels",
         data={
-            "video_url": video_url,
-            "description": caption,
-            "published": "true",  # ensure public
+            "upload_phase": "start",
             "access_token": ACCESS_TOKEN
         }
-    )
+    ).json()
 
-    res = response.json()
-    print("FB Reel Response:", res)
+    print("Start Response:", start_res)
 
-    if response.status_code != 200 or "error" in res:
-        print("❌ Facebook Reel Upload Failed")
+    if "upload_url" not in start_res:
+        print("❌ Failed to start upload")
+        return False
+
+    upload_url = start_res["upload_url"]
+    video_id = start_res["video_id"]
+
+    # STEP 2: TRANSFER
+    video_binary = requests.get(video_url).content
+
+    transfer_res = requests.post(
+        upload_url,
+        files={"file": video_binary}
+    ).json()
+
+    print("Transfer Response:", transfer_res)
+
+    if "success" not in transfer_res:
+        print("❌ Video transfer failed")
+        return False
+
+    # STEP 3: FINISH
+    finish_res = requests.post(
+        f"{GRAPH_URL}/{FB_PAGE_ID}/video_reels",
+        data={
+            "upload_phase": "finish",
+            "video_id": video_id,
+            "description": caption,
+            "access_token": ACCESS_TOKEN
+        }
+    ).json()
+
+    print("Finish Response:", finish_res)
+
+    if "error" in finish_res:
+        print("❌ Facebook publish failed")
         return False
 
     print("✅ Facebook Reel Uploaded Successfully")
     return True
 
 # ==============================
-# INSTAGRAM POST (WAIT UNTIL READY)
+# INSTAGRAM REELS
 # ==============================
 
 def post_instagram(video_url, caption):
+    print("Uploading Instagram Reel...")
+
     container = requests.post(
         f"{GRAPH_URL}/{IG_BUSINESS_ID}/media",
         data={
@@ -165,13 +197,14 @@ def post_instagram(video_url, caption):
     print("IG Container:", container)
 
     if "id" not in container:
+        print("❌ IG container failed")
         return False
 
     creation_id = container["id"]
 
-    # WAIT FOR PROCESSING
-    for _ in range(12):  # ~60 seconds max
-        time.sleep(5)
+    # Wait for processing
+    for _ in range(15):
+        time.sleep(4)
 
         status = requests.get(
             f"{GRAPH_URL}/{creation_id}",
@@ -185,6 +218,9 @@ def post_instagram(video_url, caption):
 
         if status.get("status_code") == "FINISHED":
             break
+    else:
+        print("❌ IG processing timeout")
+        return False
 
     publish = requests.post(
         f"{GRAPH_URL}/{IG_BUSINESS_ID}/media_publish",
@@ -196,7 +232,12 @@ def post_instagram(video_url, caption):
 
     print("IG Publish:", publish)
 
-    return "error" not in publish
+    if "error" in publish:
+        print("❌ IG publish failed")
+        return False
+
+    print("✅ Instagram Reel Uploaded Successfully")
+    return True
 
 # ==============================
 # MAIN
