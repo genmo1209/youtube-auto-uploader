@@ -129,7 +129,7 @@ def post_facebook(video_url, caption):
         data={
             "file_url": video_url,
             "description": caption,
-            "published": "false",
+            "published": "true",
             "access_token": ACCESS_TOKEN
         }
     ).json()
